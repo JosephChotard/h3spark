@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "h3spark"
+version = "0.0.1"
+authors = [{ name = "Joseph Chotard", email = "h3spark@chotard.com" }]
+description = "Lightweight pyspark wrapper for h3-py"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT License"}
+keywords = ["h3", "h3-py", "spark", "pyspark"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = ["h3>=4.1,<4.2", "pyspark>=3.0,<4.0"]
+
+[project.urls]
+# todo
