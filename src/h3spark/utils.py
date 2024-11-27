@@ -2,7 +2,6 @@ import json
 from typing import List, Tuple, Union
 
 import h3.api.numpy_int as h3
-from pyspark.sql import types as T
 
 H3CellInput = Union[str, int]
 

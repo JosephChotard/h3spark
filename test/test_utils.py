@@ -1,8 +1,6 @@
 import json
 import unittest
 
-import h3.api.numpy_int as h3
-
 from src.h3spark import utils
 
 input_geom = {

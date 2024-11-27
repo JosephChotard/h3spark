@@ -13,40 +13,42 @@ os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
 latitude = 30.76973533630371
 longitude = -91.45850372314453
-integer = 1
-double = 0.5
-point = '{"type": "Point", "coordinates": [-89.998354, 29.8988]}'
-line = '{"type": "LineString", "coordinates": [[-89.99927146300001, 29.90139583899997], [-89.99921418299999, 29.90139420899999], [-89.99903129900002, 29.90138951699998], [-89.99900807, 29.90142210300002], [-89.99898608000001, 29.90138835699997], [-89.99875118300002, 29.90138410499998], [-89.99872961, 29.90141686999999], [-89.99871085699999, 29.90138346399999], [-89.99837947499998, 29.90137720600001], [-89.99835869700001, 29.90140975100002], [-89.99834035200001, 29.901376191], [-89.998234115, 29.90137350700002], [-89.998218017, 29.90137313499997], [-89.99819830400003, 29.90137344499999], [-89.99787396300002, 29.90139402699998], [-89.99785696700002, 29.90142557899998], [-89.99783514199999, 29.90139429700002]]}'
-polygon = '{"type": "Polygon", "coordinates": [[[-89.998354, 29.8988], [-89.99807, 29.8988], [-89.99807, 29.898628], [-89.998354, 29.898628], [-89.998354, 29.8988]]]}'
-h3_cells = ["81447ffffffffff", "81267ffffffffff", "8148bffffffffff", "81483ffffffffff"]
-h3_edge = "131447ffffffffff"
-unit = "km^2"
+polygon = """
+{
+    "type": "Polygon",
+    "coordinates": [
+        [
+            [
+                -89.998354,
+                29.8988
+            ],
+            [
+                -89.99807,
+                29.8988
+            ],
+            [
+                -89.99807,
+                29.898628
+            ],
+            [
+                -89.998354,
+                29.898628
+            ],
+            [
+                -89.998354,
+                29.8988
+            ]
+        ]
+    ]
+}"""
+h3_cell = "81447ffffffffff"
+h3_cell_int = Decimal(582169416674836479)
 
 test_arg_map = {
-    "i": integer,
-    "j": integer,
-    "k": integer,
-    "x": integer,
-    "resolution": integer,
-    "res": integer,
     "lat": latitude,
     "lng": longitude,
-    "point1": (latitude, longitude),
-    "point2": (latitude, longitude),
-    "h": h3_cells[0],
-    "h_int": Decimal(582169416674836479),
-    "hexes": h3_cells,
-    "h1": h3_cells[1],
-    "h2": h3_cells[2],
-    "origin": h3_cells[2],
-    "destination": h3_cells[3],
-    "start": h3_cells[1],
-    "end": h3_cells[2],
-    "e": h3_edge,
-    "edge": h3_edge,
-    "geo_json": True,
-    "geo_json_conformant": True,
-    "geojson": polygon,
+    "h": h3_cell,
+    "h_int": h3_cell_int,
 }
 
 
@@ -67,7 +69,7 @@ class MyUDFTest(unittest.TestCase):
         test_df = self.get_df()
         test_df = test_df.withColumn("result", h3spark.str_to_int(F.col("h")))
         results = test_df.collect()
-        self.assertEqual(results[0]["result"], Decimal(582169416674836479))
+        self.assertEqual(results[0]["result"], h3_cell_int)
 
     def test_int_to_str(self):
         test_df = self.get_df()
@@ -119,7 +121,7 @@ class MyUDFTest(unittest.TestCase):
             h3spark.latlng_to_cell(F.lit(latitude), F.lit(longitude), F.lit(1)),
         )
         results = test_df.collect()
-        self.assertEqual(results[0]["result"], h3_cells[0])
+        self.assertEqual(results[0]["result"], h3_cell)
 
     def test_cell_to_boundary(self):
         test_df = self.get_df()
