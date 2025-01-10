@@ -151,22 +151,28 @@ def child_pos_to_cell(parent: H3CellInput, res_child: int, child_pos: int):
 
 @F.udf(T.ArrayType(H3_CELL_DECIMAL_TYPE))
 def compact_cells_decimal(cells: List[H3CellInput]):
-    return [Decimal(c.item()) for c in h3.compact_cells(cells)]
+    return [Decimal(c.item()) for c in h3.compact_cells([to_h3_cell(c) for c in cells])]
 
 
 @F.udf(T.ArrayType(T.StringType()))
 def compact_cells(cells: List[H3CellInput]):
-    return [h3.int_to_str(c) for c in h3.compact_cells(cells)]
+    return [h3.int_to_str(c) for c in h3.compact_cells([to_h3_cell(c) for c in cells])]
 
 
 @F.udf(T.ArrayType(H3_CELL_DECIMAL_TYPE))
 def uncompact_cells_decimal(cells: List[H3CellInput], res: int):
-    return [Decimal(c.item()) for c in h3.uncompact_cells(cells, res)]
+    return [
+        Decimal(c.item())
+        for c in h3.uncompact_cells([to_h3_cell(c) for c in cells], res)
+    ]
 
 
 @F.udf(T.ArrayType(T.StringType()))
 def uncompact_cells(cells: List[H3CellInput], res: int):
-    return [h3.int_to_str(c) for c in h3.uncompact_cells(cells, res)]
+    return [
+        h3.int_to_str(c)
+        for c in h3.uncompact_cells([to_h3_cell(c) for c in cells], res)
+    ]
 
 
 @F.udf(T.ArrayType(H3_CELL_DECIMAL_TYPE))
