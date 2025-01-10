@@ -75,7 +75,7 @@ def cell_to_latlng(cell: H3CellInput):
 
 
 @F.udf(T.ShortType())
-def get_resolutiuon(cell: H3CellInput):
+def get_resolution(cell: H3CellInput):
     return h3.get_resolution(to_h3_cell(cell))
 
 

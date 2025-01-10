@@ -32,7 +32,7 @@ Below is a brief overview of the available functions in `h3spark`. These functio
 - `latlng_to_cell_decimal(lat, lng, res)`: Converts latitude and longitude to an H3 cell in decimal format.
 - `latlng_to_cell(lat, lng, res)`: Converts latitude and longitude to an H3 cell in string format.
 - `cell_to_latlng(cell)`: Converts an H3 cell to latitude and longitude coordinates.
-- `get_resolutiuon(cell)`: Returns the resolution of an H3 cell.
+- `get_resolution(cell)`: Returns the resolution of an H3 cell.
 - `cell_to_parent_decimal(cell, res)`: Converts an H3 cell to its parent cell at a given resolution in decimal format.
 - `cell_to_parent(cell, res)`: Converts an H3 cell to its parent cell at a given resolution in string format.
 - `grid_distance(cell1, cell2)`: Returns the distance between two H3 cells.
