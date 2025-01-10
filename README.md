@@ -85,3 +85,10 @@ Contributions are welcome! Please submit a pull request or open an issue to cont
 This library is built on top of the H3 geospatial indexing library and PySpark. Special thanks to the developers of these libraries for their contributions to the open-source community.
 
 For more information, check the [official H3 documentation](https://h3geo.org/docs/) and [PySpark documentation](https://spark.apache.org/docs/latest/api/python/index.html).
+
+## Building + Deploying
+
+```sh
+python -m build
+python -m twine upload --verbose --repository pypi dist/*
+```

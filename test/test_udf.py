@@ -184,6 +184,15 @@ class MyUDFTest(unittest.TestCase):
             ),
         )
 
+    def test_local_ij_to_cell(self):
+        test_df = self.get_df()
+        test_df = test_df.withColumn(
+            "result",
+            h3spark.local_ij_to_cell(F.lit("85283473fffffff"), F.lit(0), F.lit(0)),
+        )
+        results = test_df.collect()
+        self.assertEqual(results[0]["result"], "85280003fffffff")
+
 
 if __name__ == "__main__":
     unittest.main()
