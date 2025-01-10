@@ -15,7 +15,7 @@ from .utils import H3CellInput, H3Shape, to_h3_cell, to_h3_shape
 
 @F.udf(T.DecimalType(20, 0))
 def str_to_int(h3_str):
-    return Decimal(h3.str_to_int(h3_str))
+    return Decimal(h3.str_to_int(h3_str).item())
 
 
 @F.udf(T.StringType())
@@ -61,7 +61,7 @@ def average_hexagon_edge_length(res: int, unit: Union[LengthUnit, str] = LengthU
 
 @F.udf(H3_CELL_DECIMAL_TYPE)
 def latlng_to_cell_decimal(lat: float, lng: float, res: int):
-    return Decimal(h3.latlng_to_cell(lat, lng, res))
+    return Decimal(h3.latlng_to_cell(lat, lng, res).item())
 
 
 @F.udf(T.StringType())
@@ -81,7 +81,7 @@ def get_resolution(cell: H3CellInput):
 
 @F.udf(H3_CELL_DECIMAL_TYPE)
 def cell_to_parent_decimal(cell: H3CellInput, res: int):
-    return Decimal(h3.cell_to_parent(to_h3_cell(cell), res))
+    return Decimal(h3.cell_to_parent(to_h3_cell(cell), res).item())
 
 
 @F.udf(T.StringType())
@@ -101,7 +101,7 @@ def cell_to_boundary(cell: H3CellInput):
 
 @F.udf(T.ArrayType(H3_CELL_DECIMAL_TYPE))
 def grid_disk_decimal(cell: H3CellInput, k: int):
-    return [Decimal(c) for c in h3.grid_disk(to_h3_cell(cell), k)]
+    return [Decimal(c.item()) for c in h3.grid_disk(to_h3_cell(cell), k)]
 
 
 @F.udf(T.ArrayType(T.StringType()))
@@ -111,7 +111,7 @@ def grid_disk(cell: H3CellInput, k: int):
 
 @F.udf(T.ArrayType(H3_CELL_DECIMAL_TYPE))
 def grid_ring_decimal(cell: H3CellInput, k: int):
-    return [Decimal(c) for c in h3.grid_ring(to_h3_cell(cell), k)]
+    return [Decimal(c.item()) for c in h3.grid_ring(to_h3_cell(cell), k)]
 
 
 @F.udf(T.ArrayType(T.StringType()))
@@ -126,7 +126,7 @@ def cell_to_children_size(cell: H3CellInput, res: int):
 
 @F.udf(T.ArrayType(H3_CELL_DECIMAL_TYPE))
 def cell_to_children_decimal(cell: H3CellInput, res: int):
-    return [Decimal(c) for c in h3.cell_to_children(to_h3_cell(cell), res)]
+    return [Decimal(c.item()) for c in h3.cell_to_children(to_h3_cell(cell), res)]
 
 
 @F.udf(T.ArrayType(T.StringType()))
@@ -141,7 +141,9 @@ def cell_to_child_pos(child: H3CellInput, res_parent: int):
 
 @F.udf(H3_CELL_DECIMAL_TYPE)
 def child_pos_to_cell_decimal(parent: H3CellInput, res_child: int, child_pos: int):
-    return Decimal(h3.child_pos_to_cell(to_h3_cell(parent), res_child, child_pos))
+    return Decimal(
+        h3.child_pos_to_cell(to_h3_cell(parent), res_child, child_pos).item()
+    )
 
 
 @F.udf(T.StringType())
@@ -151,7 +153,7 @@ def child_pos_to_cell(parent: H3CellInput, res_child: int, child_pos: int):
 
 @F.udf(T.ArrayType(H3_CELL_DECIMAL_TYPE))
 def compact_cells_decimal(cells: List[H3CellInput]):
-    return [Decimal(c) for c in h3.compact_cells(cells)]
+    return [Decimal(c.item()) for c in h3.compact_cells(cells)]
 
 
 @F.udf(T.ArrayType(T.StringType()))
@@ -161,7 +163,7 @@ def compact_cells(cells: List[H3CellInput]):
 
 @F.udf(T.ArrayType(H3_CELL_DECIMAL_TYPE))
 def uncompact_cells_decimal(cells: List[H3CellInput], res: int):
-    return [Decimal(c) for c in h3.uncompact_cells(cells, res)]
+    return [Decimal(c.item()) for c in h3.uncompact_cells(cells, res)]
 
 
 @F.udf(T.ArrayType(T.StringType()))
@@ -171,7 +173,7 @@ def uncompact_cells(cells: List[H3CellInput], res: int):
 
 @F.udf(T.ArrayType(H3_CELL_DECIMAL_TYPE))
 def h3shape_to_cells_decimal(shape: H3Shape, res: int):
-    return [Decimal(c) for c in h3.h3shape_to_cells(to_h3_shape(shape), res)]
+    return [Decimal(c.item()) for c in h3.h3shape_to_cells(to_h3_shape(shape), res)]
 
 
 @F.udf(T.ArrayType(T.StringType()))
@@ -202,7 +204,10 @@ def are_neighbor_cells(cell1: H3CellInput, cell2: H3CellInput):
 
 @F.udf(T.ArrayType(H3_CELL_DECIMAL_TYPE))
 def grid_path_cells_decimal(start: H3CellInput, end: H3CellInput):
-    return [Decimal(c) for c in h3.grid_path_cells(to_h3_cell(start), to_h3_cell(end))]
+    return [
+        Decimal(c.item())
+        for c in h3.grid_path_cells(to_h3_cell(start), to_h3_cell(end))
+    ]
 
 
 @F.udf(T.ArrayType(T.StringType()))
@@ -219,7 +224,7 @@ def is_res_class_III(cell: H3CellInput):
 
 @F.udf(T.ArrayType(H3_CELL_DECIMAL_TYPE))
 def get_pentagons_decimal(res: int):
-    return [Decimal(c) for c in h3.get_pentagons(res)]
+    return [Decimal(c.item()) for c in h3.get_pentagons(res)]
 
 
 @F.udf(T.ArrayType(T.StringType()))
@@ -229,7 +234,7 @@ def get_pentagons(res: int):
 
 @F.udf(T.ArrayType(H3_CELL_DECIMAL_TYPE))
 def get_res0_cells_decimal():
-    return [Decimal(c) for c in h3.get_res0_cells()]
+    return [Decimal(c.item()) for c in h3.get_res0_cells()]
 
 
 @F.udf(T.ArrayType(T.StringType()))
@@ -239,7 +244,7 @@ def get_res0_cells():
 
 @F.udf(H3_CELL_DECIMAL_TYPE)
 def cell_to_center_child_decimal(cell: H3CellInput, res: int):
-    return Decimal(h3.cell_to_center_child(to_h3_cell(cell), res))
+    return Decimal(h3.cell_to_center_child(to_h3_cell(cell), res).item())
 
 
 @F.udf(T.StringType())
@@ -259,7 +264,7 @@ def cell_to_local_ij(cell: H3CellInput):
 
 @F.udf(H3_CELL_DECIMAL_TYPE)
 def local_ij_to_cell_decimal(origin: H3CellInput, i: int, j: int):
-    return Decimal(h3.local_ij_to_cell(to_h3_cell(origin), i, j))
+    return Decimal(h3.local_ij_to_cell(to_h3_cell(origin), i, j).item())
 
 
 @F.udf(T.StringType())
