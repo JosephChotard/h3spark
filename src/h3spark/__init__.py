@@ -15,7 +15,7 @@ from .utils import H3CellInput, H3Shape, to_h3_cell, to_h3_shape
 
 @F.udf(T.DecimalType(20, 0))
 def str_to_int(h3_str):
-    return Decimal(h3.str_to_int(h3_str).item())
+    return Decimal(h3.str_to_int(h3_str))
 
 
 @F.udf(T.StringType())
@@ -61,7 +61,7 @@ def average_hexagon_edge_length(res: int, unit: Union[LengthUnit, str] = LengthU
 
 @F.udf(H3_CELL_DECIMAL_TYPE)
 def latlng_to_cell_decimal(lat: float, lng: float, res: int):
-    return Decimal(h3.latlng_to_cell(lat, lng, res).item())
+    return Decimal(h3.latlng_to_cell(lat, lng, res))
 
 
 @F.udf(T.StringType())
@@ -81,7 +81,7 @@ def get_resolution(cell: H3CellInput):
 
 @F.udf(H3_CELL_DECIMAL_TYPE)
 def cell_to_parent_decimal(cell: H3CellInput, res: int):
-    return Decimal(h3.cell_to_parent(to_h3_cell(cell), res).item())
+    return Decimal(h3.cell_to_parent(to_h3_cell(cell), res))
 
 
 @F.udf(T.StringType())
@@ -141,9 +141,7 @@ def cell_to_child_pos(child: H3CellInput, res_parent: int):
 
 @F.udf(H3_CELL_DECIMAL_TYPE)
 def child_pos_to_cell_decimal(parent: H3CellInput, res_child: int, child_pos: int):
-    return Decimal(
-        h3.child_pos_to_cell(to_h3_cell(parent), res_child, child_pos).item()
-    )
+    return Decimal(h3.child_pos_to_cell(to_h3_cell(parent), res_child, child_pos))
 
 
 @F.udf(T.StringType())
@@ -244,7 +242,7 @@ def get_res0_cells():
 
 @F.udf(H3_CELL_DECIMAL_TYPE)
 def cell_to_center_child_decimal(cell: H3CellInput, res: int):
-    return Decimal(h3.cell_to_center_child(to_h3_cell(cell), res).item())
+    return Decimal(h3.cell_to_center_child(to_h3_cell(cell), res))
 
 
 @F.udf(T.StringType())
@@ -264,7 +262,7 @@ def cell_to_local_ij(cell: H3CellInput):
 
 @F.udf(H3_CELL_DECIMAL_TYPE)
 def local_ij_to_cell_decimal(origin: H3CellInput, i: int, j: int):
-    return Decimal(h3.local_ij_to_cell(to_h3_cell(origin), i, j).item())
+    return Decimal(h3.local_ij_to_cell(to_h3_cell(origin), i, j))
 
 
 @F.udf(T.StringType())
