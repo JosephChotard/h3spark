@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "h3spark"
-version = "0.0.5"
+version = "0.1.0"
 authors = [{ name = "Joseph Chotard", email = "h3spark@chotard.com" }]
 description = "Lightweight pyspark wrapper for h3-py"
 readme = "README.md"
@@ -16,7 +16,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-dependencies = ["h3>=4.1,<4.2", "pyspark>=3.0,<4.0"]
+dependencies = ["h3>=4.1,<4.3", "pyspark>=3.0,<4.0"]
 
 [project.urls]
 # todo

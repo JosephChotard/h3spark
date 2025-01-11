@@ -24,7 +24,7 @@ Below is a brief overview of the available functions in `h3spark`. These functio
 
 ### Functions
 
-- `str_to_int(h3_str)`: Converts an H3 string to a decimal integer.
+- `str_to_int(h3_str)`: Converts an H3 string to an integer.
 - `int_to_str(h3_int)`: Converts an H3 integer to a string.
 - `get_num_cells(res)`: Returns the number of H3 cells for a given resolution.
 - `average_hexagon_area(res, unit)`: Returns the average area of H3 hexagons at a given resolution.

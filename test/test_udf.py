@@ -1,7 +1,6 @@
 import os
 import sys
 import unittest
-from decimal import Decimal
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
@@ -42,7 +41,7 @@ polygon = """
     ]
 }"""
 h3_cell = "81447ffffffffff"
-h3_cell_int = Decimal(582169416674836479)
+h3_cell_int = 582169416674836479
 
 test_arg_map = {
     "lat": latitude,
@@ -77,6 +76,50 @@ class MyUDFTest(unittest.TestCase):
         results = test_df.collect()
         self.assertEqual(results[0]["result"], "81447ffffffffff")
 
+    def test_latlng_to_cell(self):
+        test_df = self.get_df()
+        test_df = test_df.withColumn(
+            "result",
+            h3spark.latlng_to_cell(F.lit(latitude), F.lit(longitude), F.lit(1)),
+        )
+        results = test_df.collect()
+        self.assertEqual(results[0]["result"], h3_cell_int)
+
+    def test_h3shape_to_cells(self):
+        test_df = self.get_df()
+        test_df = test_df.withColumn(
+            "result", h3spark.h3shape_to_cells(F.lit(polygon), F.lit(13))
+        )
+        results = test_df.collect()
+        self.assertEqual(
+            sorted(results[0]["result"]),
+            sorted(
+                [
+                    636208648398676095,
+                    636208648398676223,
+                    636208648398676671,
+                    636208648398676927,
+                    636208648398677247,
+                    636208648398677567,
+                    636208648398677631,
+                    636208648398677695,
+                    636208648398677759,
+                    636208648398677823,
+                    636208648398677887,
+                    636208648398677951,
+                ]
+            ),
+        )
+
+    def test_local_ij_to_cell(self):
+        test_df = self.get_df()
+        test_df = test_df.withColumn(
+            "result",
+            h3spark.local_ij_to_cell(F.lit("85283473fffffff"), F.lit(0), F.lit(0)),
+        )
+        results = test_df.collect()
+        self.assertEqual(results[0]["result"], 599682438955794431)
+
     def test_get_num_cells(self):
         test_df = self.get_df()
         test_df = test_df.withColumn("result", h3spark.get_num_cells(F.lit(7)))
@@ -93,8 +136,6 @@ class MyUDFTest(unittest.TestCase):
         results = test_df.collect()
         # Checked with https://h3geo.org/docs/core-library/restable
         self.assertAlmostEqual(results[0]["result"], 5.161293360, 6)
-
-    # Not going to test all the native h3 calls
 
     def test_cell_to_latlng_str(self):
         test_df = self.get_df()
@@ -113,15 +154,6 @@ class MyUDFTest(unittest.TestCase):
             results[0]["result"].asDict(),
             {"lat": latitude, "lon": longitude},
         )
-
-    def test_latlng_to_cell(self):
-        test_df = self.get_df()
-        test_df = test_df.withColumn(
-            "result",
-            h3spark.latlng_to_cell(F.lit(latitude), F.lit(longitude), F.lit(1)),
-        )
-        results = test_df.collect()
-        self.assertEqual(results[0]["result"], h3_cell)
 
     def test_cell_to_boundary(self):
         test_df = self.get_df()
@@ -147,51 +179,16 @@ class MyUDFTest(unittest.TestCase):
             sorted(results[0]["result"]),
             sorted(
                 [
-                    "81447ffffffffff",
-                    "81443ffffffffff",
-                    "8144fffffffffff",
-                    "81267ffffffffff",
-                    "8126fffffffffff",
-                    "8148bffffffffff",
-                    "81457ffffffffff",
+                    581641651093503999,
+                    581650447186526207,
+                    582165018628325375,
+                    582169416674836479,
+                    582178212767858687,
+                    582187008860880895,
+                    582244183465525247,
                 ]
             ),
         )
-
-    def test_h3shape_to_cells(self):
-        test_df = self.get_df()
-        test_df = test_df.withColumn(
-            "result", h3spark.h3shape_to_cells(F.lit(polygon), F.lit(13))
-        )
-        results = test_df.collect()
-        self.assertEqual(
-            sorted(results[0]["result"]),
-            sorted(
-                [
-                    "8d444651ad5a07f",
-                    "8d444651ad5a0ff",
-                    "8d444651ad5a2bf",
-                    "8d444651ad5a3bf",
-                    "8d444651ad5a4ff",
-                    "8d444651ad5a63f",
-                    "8d444651ad5a67f",
-                    "8d444651ad5a6bf",
-                    "8d444651ad5a6ff",
-                    "8d444651ad5a73f",
-                    "8d444651ad5a77f",
-                    "8d444651ad5a7bf",
-                ]
-            ),
-        )
-
-    def test_local_ij_to_cell(self):
-        test_df = self.get_df()
-        test_df = test_df.withColumn(
-            "result",
-            h3spark.local_ij_to_cell(F.lit("85283473fffffff"), F.lit(0), F.lit(0)),
-        )
-        results = test_df.collect()
-        self.assertEqual(results[0]["result"], "85280003fffffff")
 
 
 if __name__ == "__main__":
