@@ -6,7 +6,6 @@ import h3.api.numpy_int as h3
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-import src.h3spark as h3spark
 import src.h3spark.native as h3spark_n
 
 os.environ["PYSPARK_PYTHON"] = sys.executable
@@ -65,7 +64,7 @@ class NativeOpTests(unittest.TestCase):
     def test_get_fixed_parent_one(self):
         test_df = self.get_df()
         test_df = test_df.withColumn(
-            "result", h3spark_n.go_to_parent_fixed(F.col("h3_int_15"), 15, 14)
+            "result", h3spark_n.cell_to_parent(F.col("h3_int_15"), 15, 14)
         )
         results = test_df.collect()
         for res in results:
@@ -74,7 +73,7 @@ class NativeOpTests(unittest.TestCase):
     def test_get_fixed_parent_many(self):
         test_df = self.get_df()
         test_df = test_df.withColumn(
-            "result", h3spark_n.go_to_parent_fixed(F.col("h3_int_15"), 15, 2)
+            "result", h3spark_n.cell_to_parent(F.col("h3_int_15"), 15, 2)
         )
         results = test_df.collect()
         for res in results:

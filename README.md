@@ -60,6 +60,22 @@ Below is a brief overview of the available functions in `h3spark`. These functio
 - **`local_ij_to_cell(origin: H3CellInput, i: int, j: int) -> long`**: Converts local IJ coordinates back to an H3 cell.
 - **`cell_area(cell: H3CellInput, unit: Union[AreaUnit, str] = AreaUnit.KM2) -> float`**: Computes the area of an H3 cell in a specified unit.
 
+
+### Spark native Functions
+
+Some H3 functions can ~mostly be reimplemented purely within pyspark. Doing so avoids the serialization/deserialization overhead of a UDF. These functions should be mostly equivalent to their C native counterparts while being more performant in pyspark. You can import them from `h3spark.native`
+
+- **`get_resolution(cell: long) -> long`**: Retrieves the resolution of a given H3 cell.
+- **`cell_to_parent_fixed(cell: long, current_resolution: int, parent_resolution: int) -> long`**: Given a column where every row has the same resolution (current_resolution), call `cell_to_parent` on every row to the same constant resolution (parent_resolution). Does not perform any validation on the input cells
+
+
+### Convenience functions
+
+We provide some functions that wrap other h3 functions for streamlining commonly used operations. You can import them from `h3spark.convenience`
+
+- **`min_child(cell: H3CellInput, resolution: int) -> long`**: Finds the child of minimum value of the input H3 cell at the specified resolution
+- **`max_child(cell: H3CellInput, resolution: int) -> long`**: Finds the child of maximum value of the input H3 cell at the specified resolution
+
 ## License
 
 This library is released under the MIT License. See the [LICENSE](LICENSE) file for more details.
