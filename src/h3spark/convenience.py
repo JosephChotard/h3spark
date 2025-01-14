@@ -9,4 +9,6 @@ def min_child(cell_id: H3CellInput, resolution: int):
 
 
 def max_child(cell_id: H3CellInput, resolution: int):
-    return child_pos_to_cell(cell_id, resolution, cell_to_children_size(cell_id, resolution) - 1)
+    return child_pos_to_cell(
+        cell_id, resolution, cell_to_children_size(cell_id, resolution) - 1
+    )

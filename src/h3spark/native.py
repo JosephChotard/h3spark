@@ -9,23 +9,25 @@ MAX_H3_RES = 15
 H3_PER_DIGIT_OFFSET = 3
 
 
-
 def get_resolution(col: Column) -> Column:
     return F.shiftRight(col.bitwiseAND(H3_RES_MASK), H3_RES_OFFSET)
 
+
 def __set_resolution(col: Column, res: int) -> Column:
     """Should probably not be used directly"""
-    return col.bitwiseAND(H3_RES_MASK_NEGATIVE).bitwiseOR(
-        res << H3_RES_OFFSET)
+    return col.bitwiseAND(H3_RES_MASK_NEGATIVE).bitwiseOR(res << H3_RES_OFFSET)
+
 
 def __set_index_digit(col: Column, res: int, digit: int) -> Column:
     mask_shifted = H3_DIGIT_MASK << ((MAX_H3_RES - res) * H3_PER_DIGIT_OFFSET)
     digit_shifted = digit << ((MAX_H3_RES - res) * H3_PER_DIGIT_OFFSET)
-    
+
     return col.bitwiseAND(~mask_shifted).bitwiseOR(digit_shifted)
 
 
-def cell_to_parent_fixed(col: Column, current_resolution: int, parent_resolution: int) -> Column:
+def cell_to_parent_fixed(
+    col: Column, current_resolution: int, parent_resolution: int
+) -> Column:
     """No validation, assume that all values of col are source_resolution + valid. Use at your own risk :)"""
     assert current_resolution >= parent_resolution
 
