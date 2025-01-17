@@ -21,7 +21,7 @@ class NativeOpTests(unittest.TestCase):
             644543985138668136,
             644507327923224576,
             645738780946333696,
-            647779474527485952
+            647779474527485952,
         ]
         cls.masterDf = cls.spark.createDataFrame(
             [
@@ -116,34 +116,43 @@ class NativeOpTests(unittest.TestCase):
     def test_cell_to_children_size(self):
         test_df = self.get_df()
         test_df = (
-            test_df
-            .withColumn(
-                "result_14_15", h3spark_n.cell_to_children_size(F.col("h3_int_14"), F.lit(15))
+            test_df.withColumn(
+                "result_14_15",
+                h3spark_n.cell_to_children_size(F.col("h3_int_14"), F.lit(15)),
             )
             .withColumn(
-                "result_14_14", h3spark_n.cell_to_children_size(F.col("h3_int_14"), F.lit(14))
+                "result_14_14",
+                h3spark_n.cell_to_children_size(F.col("h3_int_14"), F.lit(14)),
             )
             .withColumn(
-                "result_2_15", h3spark_n.cell_to_children_size(F.col("h3_int_2"), F.lit(15))
+                "result_2_15",
+                h3spark_n.cell_to_children_size(F.col("h3_int_2"), F.lit(15)),
             )
             .withColumn(
-                "result_2_4", h3spark_n.cell_to_children_size(F.col("h3_int_2"), F.lit(4))
+                "result_2_4",
+                h3spark_n.cell_to_children_size(F.col("h3_int_2"), F.lit(4)),
             )
         )
         results = test_df.collect()
         for res in results:
-            self.assertEqual(res["result_14_15"], h3.cell_to_children_size(res["h3_int_14"], 15))
-            self.assertEqual(res["result_14_14"], h3.cell_to_children_size(res["h3_int_14"], 14))
-            self.assertEqual(res["result_2_15"], h3.cell_to_children_size(res["h3_int_2"], 15))
-            self.assertEqual(res["result_2_4"], h3.cell_to_children_size(res["h3_int_2"], 4))
+            self.assertEqual(
+                res["result_14_15"], h3.cell_to_children_size(res["h3_int_14"], 15)
+            )
+            self.assertEqual(
+                res["result_14_14"], h3.cell_to_children_size(res["h3_int_14"], 14)
+            )
+            self.assertEqual(
+                res["result_2_15"], h3.cell_to_children_size(res["h3_int_2"], 15)
+            )
+            self.assertEqual(
+                res["result_2_4"], h3.cell_to_children_size(res["h3_int_2"], 4)
+            )
 
     def test_cell_to_children_size_throws_invalid(self):
         test_df = self.get_df()
-        test_df = (
-            test_df
-            .withColumn(
-                "result_14_13", h3spark_n.cell_to_children_size(F.col("h3_int_14"), F.lit(13), True)
-            )
+        test_df = test_df.withColumn(
+            "result_14_13",
+            h3spark_n.cell_to_children_size(F.col("h3_int_14"), F.lit(13), True),
         )
         with self.assertRaises(Exception):
             test_df.collect()

@@ -187,9 +187,9 @@ def __all_resolution_digits(cell: Column):
 
     # Kind of annoying but seems like the pyspark version of shiftleft|right doesn't accept expressions for the numBits
     # I'll PR pyspark when I get the chance but this should do for now
-    return F.expr(
-        f"shiftright({cell._jc.toString()}, {shiftAmount})"
-    ).bitwiseAND(F.expr(f"shiftleft(1, {resolution._jc.toString()} * 3)") - 1)
+    return F.expr(f"shiftright({cell._jc.toString()}, {shiftAmount})").bitwiseAND(
+        F.expr(f"shiftleft(1, {resolution._jc.toString()} * 3)") - 1
+    )
 
 
 def __is_base_cell_pentagon(cell: Column):
@@ -197,10 +197,14 @@ def __is_base_cell_pentagon(cell: Column):
 
 
 def is_pentagon(cell: Column):
-    return __is_base_cell_pentagon(get_base_cell(cell)) & (__all_resolution_digits(cell) == 0)
+    return __is_base_cell_pentagon(get_base_cell(cell)) & (
+        __all_resolution_digits(cell) == 0
+    )
 
 
-def cell_to_children_size(cell: Column, child_resolution: Column, validate_resolution: bool = False) -> Column:
+def cell_to_children_size(
+    cell: Column, child_resolution: Column, validate_resolution: bool = False
+) -> Column:
     """
     If validate_resolution is False then it might produce incorrect results if the child_resolution is less than the
     parent resolution.
@@ -208,14 +212,15 @@ def cell_to_children_size(cell: Column, child_resolution: Column, validate_resol
     n = child_resolution - get_resolution(cell)
 
     if validate_resolution:
-        assertion = F.assert_true(n >= 0, "Child resolution must be greater than or equal to parent resolution")
+        assertion = F.assert_true(
+            n >= 0,
+            "Child resolution must be greater than or equal to parent resolution",
+        )
     else:
         assertion = F.lit(None)
 
-    return F.floor(F.when(
-        assertion.isNull() &
-        is_pentagon(cell),
-        1 + 5 * (F.pow(7, n) - 1) / 6
-    ).otherwise(
-        F.pow(7, n)
-    ))
+    return F.floor(
+        F.when(
+            assertion.isNull() & is_pentagon(cell), 1 + 5 * (F.pow(7, n) - 1) / 6
+        ).otherwise(F.pow(7, n))
+    )
