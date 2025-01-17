@@ -2,7 +2,9 @@
 
 ![Tile the world in hexes](images/big_geo.jpeg "Tile the world in hexes")
 
-`h3spark` is a Python library that provides a set of user-defined functions (UDFs) for working with H3 geospatial indexing in PySpark. The functions in this library follow the same assumptions and rules as the native H3 functions, allowing for seamless integration and usage in PySpark data pipelines.
+`h3spark` is a Python library that provides a set of native and user-defined functions (UDFs) for working with H3 geospatial indexing in PySpark. The functions in this library follow the same assumptions and rules as the native H3 functions, allowing for seamless integration and usage in PySpark data pipelines.
+
+It also provides native implementations of some H3 functions that are more performant in PySpark than using UDFs. These functions are reimplemented in PySpark and avoid the serialization/deserialization overhead of a UDF.
 
 ## Installation
 
