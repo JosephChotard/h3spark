@@ -113,6 +113,41 @@ class NativeOpTests(unittest.TestCase):
         for res in results:
             self.assertEqual(res["result"], res["is_pentagon"])
 
+    def test_cell_to_children_size(self):
+        test_df = self.get_df()
+        test_df = (
+            test_df
+            .withColumn(
+                "result_14_15", h3spark_n.cell_to_children_size(F.col("h3_int_14"), F.lit(15))
+            )
+            .withColumn(
+                "result_14_14", h3spark_n.cell_to_children_size(F.col("h3_int_14"), F.lit(14))
+            )
+            .withColumn(
+                "result_2_15", h3spark_n.cell_to_children_size(F.col("h3_int_2"), F.lit(15))
+            )
+            .withColumn(
+                "result_2_4", h3spark_n.cell_to_children_size(F.col("h3_int_2"), F.lit(4))
+            )
+        )
+        results = test_df.collect()
+        for res in results:
+            self.assertEqual(res["result_14_15"], h3.cell_to_children_size(res["h3_int_14"], 15))
+            self.assertEqual(res["result_14_14"], h3.cell_to_children_size(res["h3_int_14"], 14))
+            self.assertEqual(res["result_2_15"], h3.cell_to_children_size(res["h3_int_2"], 15))
+            self.assertEqual(res["result_2_4"], h3.cell_to_children_size(res["h3_int_2"], 4))
+
+    def test_cell_to_children_size_throws_invalid(self):
+        test_df = self.get_df()
+        test_df = (
+            test_df
+            .withColumn(
+                "result_14_13", h3spark_n.cell_to_children_size(F.col("h3_int_14"), F.lit(13), True)
+            )
+        )
+        with self.assertRaises(Exception):
+            test_df.collect()
+
 
 if __name__ == "__main__":
     unittest.main()

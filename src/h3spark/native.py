@@ -200,5 +200,22 @@ def is_pentagon(cell: Column):
     return __is_base_cell_pentagon(get_base_cell(cell)) & (__all_resolution_digits(cell) == 0)
 
 
-# def cell_to_children_size(col: Column, child_resolution: Column) -> Column:
-#     n = child_resolution - get_resolution(col)
+def cell_to_children_size(cell: Column, child_resolution: Column, validate_resolution: bool = False) -> Column:
+    """
+    If validate_resolution is False then it might produce incorrect results if the child_resolution is less than the
+    parent resolution.
+    """
+    n = child_resolution - get_resolution(cell)
+
+    if validate_resolution:
+        assertion = F.assert_true(n >= 0, "Child resolution must be greater than or equal to parent resolution")
+    else:
+        assertion = F.lit(None)
+
+    return F.floor(F.when(
+        assertion.isNull() &
+        is_pentagon(cell),
+        1 + 5 * (F.pow(7, n) - 1) / 6
+    ).otherwise(
+        F.pow(7, n)
+    ))
