@@ -22,6 +22,8 @@ conda install -c conda-forge h3spark
 
 Below is a brief overview of the available functions in `h3spark`. These functions are designed to work with PySpark DataFrames and provide H3 functionality within a distributed data processing environment.
 
+Some of the functions have been reimplemented in pyspark for performance reasons. These functions can be imported from `h3spark.native`. The rest of the functions are wrappers around the native H3 functions and can be imported from `h3spark`. Note that the native functions strive to be as close to the original H3 functions as possible, but there may be some differences in behavior around edge cases + less validation.
+
 ### Functions
 
 `H3CellInput` is a type alias that represents an H3 cell, which can be either a hexadecimal string or a long integer (`H3CellInput = Union[str, int]`). h3spark will handle conversion from between types if required by h3. Prefer long integers if possible for more efficient processing.
@@ -33,13 +35,13 @@ Below is a brief overview of the available functions in `h3spark`. These functio
 - **`average_hexagon_edge_length(res: int, unit: Union[LengthUnit, str] = LengthUnit.KM) -> float`**: Computes the average edge length of an H3 hexagon at a specified resolution and unit.
 - **`latlng_to_cell(lat: float, lng: float, res: int) -> long`**: Converts latitude and longitude to an H3 cell at a specified resolution.
 - **`cell_to_latlng(cell: H3CellInput) -> COORDINATE_TYPE`**: Converts an H3 cell to its central latitude and longitude.
-- **`get_resolution(cell: H3CellInput) -> short`**: Retrieves the resolution of a given H3 cell.
+- **`get_resolution(cell: H3CellInput) -> short`**: Retrieves the resolution of a given H3 cell. _Has a pyspark native equivalent_
 - **`cell_to_parent(cell: H3CellInput, res: int) -> long`**: Converts an H3 cell to its parent cell at a specified resolution.
-- **`grid_distance(cell1: H3CellInput, cell2: H3CellInput) -> int`**: Calculates the distance in grid cells between two H3 cells.
+- **`grid_distance(cell1: H3CellInput, cell2: H3CellInput) -> int`**: Calculates the distance in grid cells between two H3 cells. _Has a pyspark native equivalent if the cell's resolution and parent are literals_
 - **`cell_to_boundary(cell: H3CellInput) -> BOUNDARY_TYPE`**: Returns the boundary of an H3 cell as a list of coordinates.
 - **`grid_disk(cell: H3CellInput, k: int) -> List[long]`**: Returns all cells within k rings around the given H3 cell.
 - **`grid_ring(cell: H3CellInput, k: int) -> List[long]`**: Returns cells in a ring of k distance from the given H3 cell.
-- **`cell_to_children_size(cell: H3CellInput, res: int) -> int`**: Returns the number of children cells for a given cell at a specified resolution.
+- **`cell_to_children_size(cell: H3CellInput, res: int) -> int`**: Returns the number of children cells for a given cell at a specified resolution. _Has a pyspark native equivalent_
 - **`cell_to_children(cell: H3CellInput, res: int) -> List[long]`**: Returns the children of an H3 cell at a specified resolution.
 - **`cell_to_child_pos(child: H3CellInput, res_parent: int) -> int`**: Finds the position of a child cell relative to its parent cell at a specified resolution.
 - **`child_pos_to_cell(parent: H3CellInput, res_child: int, child_pos: int) -> long`**: Converts a child position back to an H3 cell.
@@ -47,8 +49,8 @@ Below is a brief overview of the available functions in `h3spark`. These functio
 - **`uncompact_cells(cells: List[H3CellInput], res: int) -> List[long]`**: Uncompacts a list of H3 cells to a specified resolution.
 - **`h3shape_to_cells(shape: H3Shape, res: int) -> List[long]`**: Converts a shape to H3 cells at a specified resolution.
 - **`cells_to_h3shape(cells: List[H3CellInput]) -> string`**: Converts a list of H3 cells to a GeoJSON shape.
-- **`is_pentagon(cell: H3CellInput) -> bool`**: Checks if an H3 cell is a pentagon.
-- **`get_base_cell_number(cell: H3CellInput) -> int`**: Retrieves the base cell number of an H3 cell.
+- **`is_pentagon(cell: H3CellInput) -> bool`**: Checks if an H3 cell is a pentagon. _Has a pyspark native equivalent_
+- **`get_base_cell_number(cell: H3CellInput) -> int`**: Retrieves the base cell number of an H3 cell. _Has a pyspark native equivalent_
 - **`are_neighbor_cells(cell1: H3CellInput, cell2: H3CellInput) -> bool`**: Checks if two H3 cells are neighbors.
 - **`grid_path_cells(start: H3CellInput, end: H3CellInput) -> List[long]`**: Finds the grid path between two H3 cells.
 - **`is_res_class_III(cell: H3CellInput) -> bool`**: Checks if an H3 cell is of class III resolution.
@@ -67,6 +69,9 @@ Some H3 functions can ~mostly be reimplemented purely within pyspark. Doing so a
 
 - **`get_resolution(cell: long) -> long`**: Retrieves the resolution of a given H3 cell.
 - **`cell_to_parent_fixed(cell: long, current_resolution: int, parent_resolution: int) -> long`**: Given a column where every row has the same resolution (current_resolution), call `cell_to_parent` on every row to the same constant resolution (parent_resolution). Does not perform any validation on the input cells
+- **`get_base_cell(cell: long) -> long`**: Retrieves the base cell number of an H3 cell.
+- **`is_pentagon(cell: long) -> bool`**: Checks if an H3 cell is a pentagon.
+- **`cell_to_children_size(cell: long, res: int, validate_resolution: Optional[bool] = False) -> int`**: Returns the number of children cells for a given cell at a specified resolution. If `validate_resolution` is set to True, it will throw an error if the resolution of the input cell is less than the requested child resolution.
 
 
 ### Convenience functions
