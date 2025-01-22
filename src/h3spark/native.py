@@ -1,3 +1,6 @@
+import warnings
+from typing import Union
+
 from pyspark.sql import functions as F
 from pyspark.sql.column import Column
 
@@ -141,13 +144,22 @@ PENTAGON_BASE_CELLS = [
 ]
 
 
+def __to_sql_long(col: Union[int, Column]) -> str:
+    if isinstance(col, int):
+        col = F.lit(col)
+    col = col.cast("long")
+    return col._jc.toString()
+
+
 def get_resolution(col: Column) -> Column:
     return F.shiftRight(col.bitwiseAND(H3_RES_MASK), H3_RES_OFFSET)
 
 
-def __set_resolution(col: Column, res: int) -> Column:
+def __set_resolution(col: Column, res: Column) -> Column:
     """Should probably not be used directly"""
-    return col.bitwiseAND(H3_RES_MASK_NEGATIVE).bitwiseOR(res << H3_RES_OFFSET)
+    return col.bitwiseAND(H3_RES_MASK_NEGATIVE).bitwiseOR(
+        F.shiftleft(res.cast("long"), H3_RES_OFFSET)
+    )
 
 
 def __set_index_digit(col: Column, res: int, digit: int) -> Column:
@@ -157,19 +169,23 @@ def __set_index_digit(col: Column, res: int, digit: int) -> Column:
     return col.bitwiseAND(~mask_shifted).bitwiseOR(digit_shifted)
 
 
-def cell_to_parent_fixed(
-    col: Column, current_resolution: int, parent_resolution: int
-) -> Column:
-    """No validation, assume that all values of col are source_resolution + valid. Use at your own risk :)"""
-    assert current_resolution >= parent_resolution
+def __clear_all_digits_for_resolution(col: Column, res: Column) -> Column:
+    mask = (
+        F.expr(
+            f"shiftleft({__to_sql_long(1)},"
+            f"({__to_sql_long(MAX_H3_RES)} - {__to_sql_long(res)}) * {__to_sql_long(H3_PER_DIGIT_OFFSET)})"
+        )
+        - 1
+    )
+    return col.bitwiseOR(mask)
 
-    if current_resolution == parent_resolution:
-        return col
 
-    parent = __set_resolution(col, parent_resolution)
-    for i in range(parent_resolution, current_resolution):
-        parent = __set_index_digit(parent, i + 1, H3_DIGIT_MASK)
-    return parent
+def cell_to_parent(col: Column, parent_resolution: Union[int, Column]) -> Column:
+    """Doesn't validate that the parent_resolution is less than the current resolution"""
+    if isinstance(parent_resolution, int):
+        parent_resolution = F.lit(parent_resolution).cast("long")
+    parent = __clear_all_digits_for_resolution(col, parent_resolution)
+    return __set_resolution(parent, parent_resolution)
 
 
 def get_base_cell(col: Column) -> Column:
@@ -187,8 +203,8 @@ def __all_resolution_digits(cell: Column):
 
     # Kind of annoying but seems like the pyspark version of shiftleft|right doesn't accept expressions for the numBits
     # I'll PR pyspark when I get the chance but this should do for now
-    return F.expr(f"shiftright({cell._jc.toString()}, {shiftAmount})").bitwiseAND(
-        F.expr(f"shiftleft(1, {resolution._jc.toString()} * 3)") - 1
+    return F.expr(f"shiftright({__to_sql_long(cell)}, {shiftAmount})").bitwiseAND(
+        F.expr(f"shiftleft(1, {__to_sql_long(resolution)} * 3)") - 1
     )
 
 
@@ -234,3 +250,22 @@ def str_to_int(col: Column) -> Column:
 def int_to_str(col: Column) -> Column:
     """Performs no validation"""
     return F.lower(F.hex(col))
+
+
+def cell_to_parent_fixed(
+    col: Column, current_resolution: int, parent_resolution: int
+) -> Column:
+    """No validation, assume that all values of col are source_resolution + valid. Use at your own risk :)"""
+    warnings.warn(
+        "This function was a mistake, use cell_to_parent instead. Going to delete it at some point",
+        DeprecationWarning,
+    )
+    assert current_resolution >= parent_resolution
+
+    if current_resolution == parent_resolution:
+        return col
+
+    parent = __set_resolution(col, F.lit(parent_resolution).cast("long"))
+    for i in range(parent_resolution, current_resolution):
+        parent = __set_index_digit(parent, i + 1, H3_DIGIT_MASK)
+    return parent
