@@ -224,3 +224,11 @@ def cell_to_children_size(
             assertion.isNull() & is_pentagon(cell), 1 + 5 * (F.pow(7, n) - 1) / 6
         ).otherwise(F.pow(7, n))
     )
+
+def str_to_int(col: Column) -> Column:
+    """Performs no validation"""
+    return F.conv(col, 16, 10).cast("long")
+
+def int_to_str(col: Column) -> Column:
+    """Performs no validation"""
+    return F.lower(F.hex(col))

@@ -30,8 +30,8 @@ Some of the functions have been reimplemented in pyspark for performance reasons
 
 `H3CellInput` is a type alias that represents an H3 cell, which can be either a hexadecimal string or a long integer (`H3CellInput = Union[str, int]`). h3spark will handle conversion from between types if required by h3. Prefer long integers if possible for more efficient processing.
 
-- **`str_to_int(h3_str: string) -> long`**: Converts an H3 string to an integer.
-- **`int_to_str(h3_int: Union[str, int]) -> string`**: Converts an H3 integer to a string. Allows strings due to Spark's limitation with unsigned 64-bit integers.
+- **`str_to_int(h3_str: string) -> long`**: Converts an H3 string to an integer. _Has a pyspark native equivalent_
+- **`int_to_str(h3_int: Union[str, int]) -> string`**: Converts an H3 integer to a string. Allows strings due to Spark's limitation with unsigned 64-bit integers. _Has a pyspark native equivalent_
 - **`get_num_cells(res: int) -> int`**: Returns the number of H3 cells at a given resolution.
 - **`average_hexagon_area(res: int, unit: Union[AreaUnit, str] = AreaUnit.KM2) -> float`**: Calculates the average area of an H3 hexagon at a given resolution and unit.
 - **`average_hexagon_edge_length(res: int, unit: Union[LengthUnit, str] = LengthUnit.KM) -> float`**: Computes the average edge length of an H3 hexagon at a specified resolution and unit.
@@ -69,12 +69,13 @@ Some of the functions have been reimplemented in pyspark for performance reasons
 
 Some H3 functions can ~mostly be reimplemented purely within pyspark. Doing so avoids the serialization/deserialization overhead of a UDF. These functions should be mostly equivalent to their C native counterparts while being more performant in pyspark. You can import them from `h3spark.native`
 
-- **`get_resolution(cell: long) -> long`**: Retrieves the resolution of a given H3 cell.
+- **`cell_to_children_size(cell: long, res: int, validate_resolution: Optional[bool] = False) -> int`**: Returns the number of children cells for a given cell at a specified resolution. If `validate_resolution` is set to True, it will throw an error if the resolution of the input cell is less than the requested child resolution.
 - **`cell_to_parent_fixed(cell: long, current_resolution: int, parent_resolution: int) -> long`**: Given a column where every row has the same resolution (current_resolution), call `cell_to_parent` on every row to the same constant resolution (parent_resolution). Does not perform any validation on the input cells
 - **`get_base_cell(cell: long) -> long`**: Retrieves the base cell number of an H3 cell.
+- **`get_resolution(cell: long) -> long`**: Retrieves the resolution of a given H3 cell.
+- **`int_to_str(cell: long) -> string`**: Converts an H3 integer to its string representation
 - **`is_pentagon(cell: long) -> bool`**: Checks if an H3 cell is a pentagon.
-- **`cell_to_children_size(cell: long, res: int, validate_resolution: Optional[bool] = False) -> int`**: Returns the number of children cells for a given cell at a specified resolution. If `validate_resolution` is set to True, it will throw an error if the resolution of the input cell is less than the requested child resolution.
-
+- **`str_to_int(cell: string) -> long`**: Converts an H3 string to its integer representation
 
 ### Convenience functions
 
