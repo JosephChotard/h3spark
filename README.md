@@ -83,6 +83,7 @@ We provide some functions that wrap other h3 functions for streamlining commonly
 
 - **`min_child(cell: H3CellInput, resolution: int) -> long`**: Finds the child of minimum value of the input H3 cell at the specified resolution
 - **`max_child(cell: H3CellInput, resolution: int) -> long`**: Finds the child of maximum value of the input H3 cell at the specified resolution
+- **`h3shape_to_cells_compacted(shape: H3Shape, res: int) -> List[long]`**: Converts a shape to H3 cells at a specified resolution and compacts the result. Avoids the need to call `compact_cells` after `h3shape_to_cells` (which requires an additional pass over the data)
 
 ## License
 
