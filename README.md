@@ -4,7 +4,7 @@
 
 `h3spark` is a Python library that provides a set of native and user-defined functions (UDFs) for working with H3 geospatial indexing in PySpark. The functions in this library follow the same assumptions and rules as the native H3 functions, allowing for seamless integration and usage in PySpark data pipelines.
 
-It also provides native implementations of some H3 functions that are more performant in PySpark than using UDFs. These functions are reimplemented in PySpark and avoid the serialization/deserialization overhead of a UDF.
+It also provides native implementations of some H3 functions that are more performant in PySpark than using UDFs. These functions are reimplemented in PySpark and avoid the serialization/deserialization overhead of a UDF but do not have the same level of validation as the native H3 functions.
 
 ## Installation
 
@@ -38,7 +38,7 @@ Some of the functions have been reimplemented in pyspark for performance reasons
 - **`latlng_to_cell(lat: float, lng: float, res: int) -> long`**: Converts latitude and longitude to an H3 cell at a specified resolution.
 - **`cell_to_latlng(cell: H3CellInput) -> COORDINATE_TYPE`**: Converts an H3 cell to its central latitude and longitude.
 - **`get_resolution(cell: H3CellInput) -> short`**: Retrieves the resolution of a given H3 cell. _Has a pyspark native equivalent_
-- **`cell_to_parent(cell: H3CellInput, res: int) -> long`**: Converts an H3 cell to its parent cell at a specified resolution.
+- **`cell_to_parent(cell: H3CellInput, res: int) -> long`**: Converts an H3 cell to its parent cell at a specified resolution. _Has a pyspark native equivalent_
 - **`grid_distance(cell1: H3CellInput, cell2: H3CellInput) -> int`**: Calculates the distance in grid cells between two H3 cells. _Has a pyspark native equivalent if the cell's resolution and parent are literals_
 - **`cell_to_boundary(cell: H3CellInput) -> BOUNDARY_TYPE`**: Returns the boundary of an H3 cell as a list of coordinates.
 - **`grid_disk(cell: H3CellInput, k: int) -> List[long]`**: Returns all cells within k rings around the given H3 cell.
@@ -70,7 +70,7 @@ Some of the functions have been reimplemented in pyspark for performance reasons
 Some H3 functions can ~mostly be reimplemented purely within pyspark. Doing so avoids the serialization/deserialization overhead of a UDF. These functions should be mostly equivalent to their C native counterparts while being more performant in pyspark. You can import them from `h3spark.native`
 
 - **`cell_to_children_size(cell: long, res: int, validate_resolution: Optional[bool] = False) -> int`**: Returns the number of children cells for a given cell at a specified resolution. If `validate_resolution` is set to True, it will throw an error if the resolution of the input cell is less than the requested child resolution.
-- **`cell_to_parent_fixed(cell: long, current_resolution: int, parent_resolution: int) -> long`**: Given a column where every row has the same resolution (current_resolution), call `cell_to_parent` on every row to the same constant resolution (parent_resolution). Does not perform any validation on the input cells
+- **`cell_to_parent(cell: long, parent_resolution: int) -> long`**:  Converts an H3 cell to its parent cell at a specified resolution. Does not check if the parent resolution is valid or if the cell is valid
 - **`get_base_cell(cell: long) -> long`**: Retrieves the base cell number of an H3 cell.
 - **`get_resolution(cell: long) -> long`**: Retrieves the resolution of a given H3 cell.
 - **`int_to_str(cell: long) -> string`**: Converts an H3 integer to its string representation
