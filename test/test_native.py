@@ -27,6 +27,7 @@ class NativeOpTests(unittest.TestCase):
             [
                 {
                     "h3_int_15": hex,
+                    "h3_int_15_str": h3.int_to_str(hex),
                     "h3_int_14": h3.cell_to_parent(hex, 14),
                     "h3_int_2": h3.cell_to_parent(hex, 2),
                     "h3_base_cell": h3.get_base_cell_number(hex),
@@ -156,6 +157,26 @@ class NativeOpTests(unittest.TestCase):
         )
         with self.assertRaises(Exception):
             test_df.collect()
+
+    def test_str_to_int(self):
+        test_df = self.get_df()
+        test_df = test_df.withColumn(
+            "result",
+            h3spark_n.str_to_int(F.col("h3_int_15_str")),
+        )
+        results = test_df.collect()
+        for res in results:
+            self.assertEqual(res["result"], res["h3_int_15"])
+
+    def test_int_to_str(self):
+        test_df = self.get_df()
+        test_df = test_df.withColumn(
+            "result",
+            h3spark_n.int_to_str(F.col("h3_int_15")),
+        )
+        results = test_df.collect()
+        for res in results:
+            self.assertEqual(res["result"], res["h3_int_15_str"])
 
 
 if __name__ == "__main__":
