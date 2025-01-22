@@ -173,7 +173,7 @@ def __clear_all_digits_for_resolution(col: Column, res: Column) -> Column:
     mask = (
         F.expr(
             f"shiftleft({__to_sql_long(1)},"
-            "({__to_sql_long(MAX_H3_RES)} - {__to_sql_long(res)}) * {__to_sql_long(H3_PER_DIGIT_OFFSET)})"
+            f"({__to_sql_long(MAX_H3_RES)} - {__to_sql_long(res)}) * {__to_sql_long(H3_PER_DIGIT_OFFSET)})"
         )
         - 1
     )
