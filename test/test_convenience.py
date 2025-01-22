@@ -2,7 +2,6 @@ import os
 import sys
 import unittest
 
-import h3.api.numpy_int as h3
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
