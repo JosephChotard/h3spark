@@ -225,9 +225,11 @@ def cell_to_children_size(
         ).otherwise(F.pow(7, n))
     )
 
+
 def str_to_int(col: Column) -> Column:
     """Performs no validation"""
     return F.conv(col, 16, 10).cast("long")
+
 
 def int_to_str(col: Column) -> Column:
     """Performs no validation"""

@@ -166,9 +166,7 @@ class NativeOpTests(unittest.TestCase):
         )
         results = test_df.collect()
         for res in results:
-            self.assertEqual(
-                res["result"], res["h3_int_15"]
-            )
+            self.assertEqual(res["result"], res["h3_int_15"])
 
     def test_int_to_str(self):
         test_df = self.get_df()
@@ -178,9 +176,7 @@ class NativeOpTests(unittest.TestCase):
         )
         results = test_df.collect()
         for res in results:
-            self.assertEqual(
-                res["result"], res["h3_int_15_str"]
-            )
+            self.assertEqual(res["result"], res["h3_int_15_str"])
 
 
 if __name__ == "__main__":
