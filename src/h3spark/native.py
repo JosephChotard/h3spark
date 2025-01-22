@@ -188,6 +188,11 @@ def cell_to_parent(col: Column, parent_resolution: Union[int, Column]) -> Column
     return __set_resolution(parent, parent_resolution)
 
 
+def is_childof(child: Column, parent: Column):
+    parent_resolution = get_resolution(parent)
+    return cell_to_parent(child, parent_resolution) == parent
+
+
 def get_base_cell(col: Column) -> Column:
     return F.shiftRight(col.bitwiseAND(H3_BC_MASK), H3_BC_OFFSET)
 
