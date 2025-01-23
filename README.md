@@ -26,6 +26,19 @@ Below is a brief overview of the available functions in `h3spark`. These functio
 
 Some of the functions have been reimplemented in pyspark for performance reasons. These functions can be imported from `h3spark.native`. The rest of the functions are wrappers around the native H3 functions and can be imported from `h3spark`. Note that the native functions strive to be as close to the original H3 functions as possible, but there may be some differences in behavior around edge cases + less validation.
 
+### Spark native Functions
+
+Some H3 functions can ~mostly be reimplemented purely within pyspark. Doing so avoids the serialization/deserialization overhead of a UDF. These functions should be mostly equivalent to their C native counterparts while being more performant in pyspark. You can import them from `h3spark.native`
+
+- **`cell_to_children_size(cell: long, res: int, validate_resolution: Optional[bool] = False) -> int`**: Returns the number of children cells for a given cell at a specified resolution. If `validate_resolution` is set to True, it will throw an error if the resolution of the input cell is less than the requested child resolution.
+- **`cell_to_parent(cell: long, parent_resolution: int) -> long`**:  Converts an H3 cell to its parent cell at a specified resolution. Does not check if the parent resolution is valid or if the cell is valid
+- **`get_base_cell(cell: long) -> long`**: Retrieves the base cell number of an H3 cell.
+- **`get_resolution(cell: long) -> long`**: Retrieves the resolution of a given H3 cell.
+- **`int_to_str(cell: long) -> string`**: Converts an H3 integer to its string representation
+- **`is_pentagon(cell: long) -> bool`**: Checks if an H3 cell is a pentagon.
+- **`str_to_int(cell: string) -> long`**: Converts an H3 string to its integer representation
+- **`is_childof(child: long, parent: long) -> bool`**: Checks if a cell is a child of another cell
+
 ### Functions
 
 `H3CellInput` is a type alias that represents an H3 cell, which can be either a hexadecimal string or a long integer (`H3CellInput = Union[str, int]`). h3spark will handle conversion from between types if required by h3. Prefer long integers if possible for more efficient processing.
@@ -63,19 +76,6 @@ Some of the functions have been reimplemented in pyspark for performance reasons
 - **`cell_to_local_ij(cell: H3CellInput) -> List[int]`**: Converts an H3 cell to local IJ coordinates.
 - **`local_ij_to_cell(origin: H3CellInput, i: int, j: int) -> long`**: Converts local IJ coordinates back to an H3 cell.
 - **`cell_area(cell: H3CellInput, unit: Union[AreaUnit, str] = AreaUnit.KM2) -> float`**: Computes the area of an H3 cell in a specified unit.
-
-
-### Spark native Functions
-
-Some H3 functions can ~mostly be reimplemented purely within pyspark. Doing so avoids the serialization/deserialization overhead of a UDF. These functions should be mostly equivalent to their C native counterparts while being more performant in pyspark. You can import them from `h3spark.native`
-
-- **`cell_to_children_size(cell: long, res: int, validate_resolution: Optional[bool] = False) -> int`**: Returns the number of children cells for a given cell at a specified resolution. If `validate_resolution` is set to True, it will throw an error if the resolution of the input cell is less than the requested child resolution.
-- **`cell_to_parent(cell: long, parent_resolution: int) -> long`**:  Converts an H3 cell to its parent cell at a specified resolution. Does not check if the parent resolution is valid or if the cell is valid
-- **`get_base_cell(cell: long) -> long`**: Retrieves the base cell number of an H3 cell.
-- **`get_resolution(cell: long) -> long`**: Retrieves the resolution of a given H3 cell.
-- **`int_to_str(cell: long) -> string`**: Converts an H3 integer to its string representation
-- **`is_pentagon(cell: long) -> bool`**: Checks if an H3 cell is a pentagon.
-- **`str_to_int(cell: string) -> long`**: Converts an H3 string to its integer representation
 
 ### Convenience functions
 
