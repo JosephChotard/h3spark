@@ -191,9 +191,7 @@ def cell_to_parent(col: Column, parent_resolution: Union[int, Column]) -> Column
 def __resolution_mask(resolution: Column) -> Column:
     offset = (MAX_H3_RES - resolution) * H3_PER_DIGIT_OFFSET
     right_side = F.expr(f"shiftleft(CAST(1 as BIGINT), {__to_sql_long(offset)})") - 1
-    return F.lit((1 << H3_RES_OFFSET) - 1).bitwiseXOR(
-        right_side
-    )
+    return F.lit((1 << H3_RES_OFFSET) - 1).bitwiseXOR(right_side)
 
 
 def is_childof(child: Column, parent: Column):
