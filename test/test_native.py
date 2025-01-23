@@ -201,6 +201,33 @@ class NativeOpTests(unittest.TestCase):
         for res in results:
             self.assertEqual(res["result"], res["h3_int_15_str"])
 
+    def test_ischildof(self):
+        test_df = self.get_df()
+        test_df = (
+            test_df.withColumn(
+                "result_1", h3spark_n.is_childof(F.col("h3_int_14"), F.col("h3_int_15"))
+            )
+            .withColumn(
+                "result_2", h3spark_n.is_childof(F.col("h3_int_2"), F.col("h3_int_15"))
+            )
+            .withColumn(
+                "result_3", h3spark_n.is_childof(F.col("h3_int_15"), F.col("h3_int_15"))
+            )
+            .withColumn(
+                "result_4", h3spark_n.is_childof(F.col("h3_int_15"), F.col("h3_int_2"))
+            )
+            .withColumn(
+                "result_5", h3spark_n.is_childof(F.col("h3_int_15"), F.col("h3_int_14"))
+            )
+        )
+        results = test_df.collect()
+        for res in results:
+            self.assertEqual(res["result_1"], False)
+            self.assertEqual(res["result_2"], False)
+            self.assertEqual(res["result_3"], True)
+            self.assertEqual(res["result_4"], True)
+            self.assertEqual(res["result_5"], True)
+
 
 if __name__ == "__main__":
     unittest.main()

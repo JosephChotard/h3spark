@@ -152,7 +152,7 @@ def __to_sql_long(col: Union[int, Column]) -> str:
 
 
 def get_resolution(col: Column) -> Column:
-    return F.shiftRight(col.bitwiseAND(H3_RES_MASK), H3_RES_OFFSET)
+    return F.shiftRight(col.bitwiseAND(H3_RES_MASK), H3_RES_OFFSET).cast("long")
 
 
 def __set_resolution(col: Column, res: Column) -> Column:
@@ -186,6 +186,18 @@ def cell_to_parent(col: Column, parent_resolution: Union[int, Column]) -> Column
         parent_resolution = F.lit(parent_resolution).cast("long")
     parent = __clear_all_digits_for_resolution(col, parent_resolution)
     return __set_resolution(parent, parent_resolution)
+
+
+def __resolution_mask(resolution: Column) -> Column:
+    offset = (MAX_H3_RES - resolution) * H3_PER_DIGIT_OFFSET
+    right_side = F.expr(f"shiftleft(CAST(1 as BIGINT), {__to_sql_long(offset)})") - 1
+    return F.lit((1 << H3_RES_OFFSET) - 1).bitwiseXOR(right_side)
+
+
+def is_childof(child: Column, parent: Column):
+    mask = __resolution_mask(get_resolution(parent))
+    xor_result = child.bitwiseXOR(parent)
+    return xor_result.bitwiseAND(mask) == 0
 
 
 def get_base_cell(col: Column) -> Column:
