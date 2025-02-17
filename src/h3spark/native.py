@@ -281,3 +281,16 @@ def cell_to_parent_fixed(
     for i in range(parent_resolution, current_resolution):
         parent = __set_index_digit(parent, i + 1, H3_DIGIT_MASK)
     return parent
+
+
+def minchild(cell: Column, resolution: Column) -> Column:
+    res = get_resolution(cell)
+    parent_res_mask = __resolution_mask(res)
+    child_res_mask = __resolution_mask(resolution)
+    mask = parent_res_mask.bitwiseXOR(child_res_mask)
+    masked = cell.bitwiseAND(F.bitwise_not(mask))
+    return __set_resolution(masked, resolution)
+
+
+def maxchild(cell: Column, resolution: Column) -> Column:
+    raise NotImplementedError("maxchild is not implemented yet")
