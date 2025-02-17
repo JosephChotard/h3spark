@@ -12,6 +12,7 @@ MAX_H3_RES = 15
 H3_PER_DIGIT_OFFSET = 3
 H3_BC_OFFSET = 45
 H3_BC_MASK = 127 << H3_BC_OFFSET
+MAX_CHILD_MASK = 0b001001001001001001001001001001001001001001001
 
 BASE_CELL_DATA = [
     ((1, (1, 0, 0)), 0, (0, 0)),  # base cell 0
@@ -216,7 +217,7 @@ def __all_resolution_digits(cell: Column):
     # Kind of annoying but seems like the pyspark version of shiftleft|right doesn't accept expressions for the numBits
     # I'll PR pyspark when I get the chance but this should do for now
     return F.expr(f"shiftright({__to_sql_long(cell)}, {shiftAmount})").bitwiseAND(
-        F.expr(f"shiftleft(1, {__to_sql_long(resolution)} * 3)") - 1
+        F.expr(f"shiftleft(1, {__to_sql_long(resolution)} * {H3_PER_DIGIT_OFFSET})") - 1
     )
 
 
@@ -281,3 +282,27 @@ def cell_to_parent_fixed(
     for i in range(parent_resolution, current_resolution):
         parent = __set_index_digit(parent, i + 1, H3_DIGIT_MASK)
     return parent
+
+
+def minchild(cell: Column, resolution: Column) -> Column:
+    end_mask_pos = H3_BC_OFFSET - get_resolution(cell) * H3_PER_DIGIT_OFFSET - 1
+    start_mask_pos = H3_BC_OFFSET - resolution * H3_PER_DIGIT_OFFSET
+    mask = F.expr(
+        f"shiftLeft("
+        f"shiftLeft({__to_sql_long(1)}, {__to_sql_long(end_mask_pos)} - {__to_sql_long(start_mask_pos)} + 1) - 1,"
+        f"{__to_sql_long(start_mask_pos)})"
+    )
+    masked = cell.bitwiseAND(F.bitwise_not(mask))
+    return __set_resolution(masked, resolution)
+
+
+def maxchild(cell: Column, resolution: Column) -> Column:
+    res_diff = resolution - get_resolution(cell)
+    start_mask_pos = H3_BC_OFFSET - resolution * H3_PER_DIGIT_OFFSET
+    mask = F.expr(
+        f"shiftLeft("
+        f"shiftRight({MAX_CHILD_MASK}, {H3_BC_OFFSET} - {__to_sql_long(res_diff)} * {H3_PER_DIGIT_OFFSET}),"
+        f"{__to_sql_long(start_mask_pos)})"
+    )
+    masked = cell.bitwiseAND(F.bitwise_not(mask))
+    return __set_resolution(masked, resolution)
