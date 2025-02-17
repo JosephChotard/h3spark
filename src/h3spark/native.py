@@ -295,7 +295,9 @@ def minchild(cell: Column, resolution: Column) -> Column:
     end_mask_pos = H3_BC_OFFSET - get_resolution(cell) * H3_PER_DIGIT_OFFSET - 1
     start_mask_pos = H3_BC_OFFSET - resolution * H3_PER_DIGIT_OFFSET
     mask = F.expr(
-        f"shiftLeft(shiftLeft({__to_sql_long(1)}, {__to_sql_long(end_mask_pos)} - {__to_sql_long(start_mask_pos)} + 1) - 1, {__to_sql_long(start_mask_pos)})"
+        f"shiftLeft("
+        f"shiftLeft({__to_sql_long(1)}, {__to_sql_long(end_mask_pos)} - {__to_sql_long(start_mask_pos)} + 1) - 1,"
+        f"{__to_sql_long(start_mask_pos)})"
     )
     masked = cell.bitwiseAND(F.bitwise_not(mask))
     return __set_resolution(masked, resolution)
@@ -305,7 +307,9 @@ def maxchild(cell: Column, resolution: Column) -> Column:
     res_diff = resolution - get_resolution(cell)
     start_mask_pos = H3_BC_OFFSET - resolution * H3_PER_DIGIT_OFFSET
     mask = F.expr(
-        f"shiftLeft(shiftRight({MAX_CHILD_MASK}, {H3_BC_OFFSET} - {__to_sql_long(res_diff)} * {H3_PER_DIGIT_OFFSET}), {__to_sql_long(start_mask_pos)})"
+        f"shiftLeft("
+        f"shiftRight({MAX_CHILD_MASK}, {H3_BC_OFFSET} - {__to_sql_long(res_diff)} * {H3_PER_DIGIT_OFFSET}),"
+        f"{__to_sql_long(start_mask_pos)})"
     )
     masked = cell.bitwiseAND(F.bitwise_not(mask))
     return __set_resolution(masked, resolution)
