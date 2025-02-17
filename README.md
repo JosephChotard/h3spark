@@ -35,9 +35,11 @@ Some H3 functions can ~mostly be reimplemented purely within pyspark. Doing so a
 - **`get_base_cell(cell: long) -> long`**: Retrieves the base cell number of an H3 cell.
 - **`get_resolution(cell: long) -> long`**: Retrieves the resolution of a given H3 cell.
 - **`int_to_str(cell: long) -> string`**: Converts an H3 integer to its string representation
-- **`is_pentagon(cell: long) -> bool`**: Checks if an H3 cell is a pentagon.
-- **`str_to_int(cell: string) -> long`**: Converts an H3 string to its integer representation
 - **`is_childof(child: long, parent: long) -> bool`**: Checks if a cell is a child of another cell
+- **`is_pentagon(cell: long) -> bool`**: Checks if an H3 cell is a pentagon.
+- **`maxchild(cell: long, resolution: int) -> long`**: Finds the child of maximum value of the input H3 cell at the specified resolution
+- **`minchild(cell: long, resolution: int) -> long`**: Finds the child of minimum value of the input H3 cell at the specified resolution
+- **`str_to_int(cell: string) -> long`**: Converts an H3 string to its integer representation
 
 ### Functions
 
