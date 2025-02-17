@@ -283,13 +283,6 @@ def cell_to_parent_fixed(
         parent = __set_index_digit(parent, i + 1, H3_DIGIT_MASK)
     return parent
 
-    # def masked_64bit(a: int, b: int) -> int:
-    #     # Create a sequence of (b-a+1) 1-bits, then shift it left by 'a' positions
-    #     mask = ((1 << (b - a + 1)) - 1) << a
-
-    #     # Invert the mask so bits a..b become 0, and apply it to 64 bits
-    #     return ~mask & 0xFFFFFFFFFFFFFFFF
-
 
 def minchild(cell: Column, resolution: Column) -> Column:
     end_mask_pos = H3_BC_OFFSET - get_resolution(cell) * H3_PER_DIGIT_OFFSET - 1
