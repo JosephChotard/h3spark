@@ -241,11 +241,26 @@ class NativeOpTests(unittest.TestCase):
         )
         results = test_df.collect()
         for res in results:
-            print(f"{res['h3_int_14']:08b}")
-            print(f"{res['result_14_15']:08b}")
             self.assertEqual(res["result_14_15"], h3.child_pos_to_cell(res["h3_int_14"], 15, 0))
             self.assertEqual(res["result_15_15"], h3.child_pos_to_cell(res["h3_int_15"], 15, 0))
             self.assertEqual(res["result_2_7"], h3.child_pos_to_cell(res["h3_int_2"], 7, 0))
+
+    def test_max_child(self):
+        test_df = self.get_df()
+        test_df = (
+            test_df.withColumn(
+                "result_14_15", h3spark_n.maxchild(F.col("h3_int_14"), F.lit(15))
+            )
+            .withColumn(
+                "result_15_15", h3spark_n.maxchild(F.col("h3_int_15"), F.lit(15))
+            )
+            .withColumn("result_2_7", h3spark_n.maxchild(F.col("h3_int_2"), F.lit(7)))
+        )
+        results = test_df.collect()
+        for res in results:
+            self.assertEqual(res["result_14_15"], h3.child_pos_to_cell(res["h3_int_14"], 15, h3.cell_to_children_size(res["h3_int_14"], 15) - 1))
+            self.assertEqual(res["result_15_15"], h3.child_pos_to_cell(res["h3_int_15"], 15, h3.cell_to_children_size(res["h3_int_15"], 15) - 1))
+            self.assertEqual(res["result_2_7"], h3.child_pos_to_cell(res["h3_int_2"], 7, h3.cell_to_children_size(res["h3_int_2"], 7) - 1))
 
 
 if __name__ == "__main__":
