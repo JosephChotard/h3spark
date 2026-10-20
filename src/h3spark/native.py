@@ -1,8 +1,11 @@
 import warnings
 from typing import Union
 
+import h3.api.numpy_int as h3
 from pyspark.sql import functions as F
 from pyspark.sql.column import Column
+
+from .models import AreaUnit, LengthUnit
 
 H3_RES_OFFSET = 52
 H3_RES_MASK = 15 << H3_RES_OFFSET
@@ -13,6 +16,7 @@ H3_PER_DIGIT_OFFSET = 3
 H3_BC_OFFSET = 45
 H3_BC_MASK = 127 << H3_BC_OFFSET
 MAX_CHILD_MASK = 0b001001001001001001001001001001001001001001001
+H3_DIGITS_MASK = (1 << H3_BC_OFFSET) - 1
 
 BASE_CELL_DATA = [
     ((1, (1, 0, 0)), 0, (0, 0)),  # base cell 0
@@ -145,15 +149,45 @@ PENTAGON_BASE_CELLS = [
 ]
 
 
-def __to_sql_long(col: Union[int, Column]) -> str:
+def __to_long_col(col: Union[int, Column]) -> Column:
     if isinstance(col, int):
         col = F.lit(col)
-    col = col.cast("long")
-    return col._jc.toString()
+    return col.cast("long")
+
+
+def __literal_array(values: list) -> Column:
+    return F.array(
+        *[__literal_array(v) if isinstance(v, list) else F.lit(v) for v in values]
+    )
+
+
+def __lookup(values: list, index: Union[int, Column]) -> Column:
+    """
+    Looks up a per-resolution constant. Spark constant-folds the literal array, so this avoids both UDFs and
+    building SQL expression strings to shift by a column amount.
+    """
+    return __literal_array(values)[__to_long_col(index)]
+
+
+# Bits of every digit after resolution r, i.e. the digits that are unused (set to 7) for a cell at resolution r
+DIGITS_AFTER_RES = [
+    (1 << ((MAX_H3_RES - r) * H3_PER_DIGIT_OFFSET)) - 1 for r in range(MAX_H3_RES + 1)
+]
+
+
+def __digits_after_res(res: Union[int, Column]) -> Column:
+    return __lookup(DIGITS_AFTER_RES, res)
+
+
+def __digits_between(cell: Column, child_resolution: Column) -> Column:
+    """Bits of the digits for resolutions in (get_resolution(cell), child_resolution]"""
+    return __digits_after_res(get_resolution(cell)).bitwiseXOR(
+        __digits_after_res(child_resolution)
+    )
 
 
 def get_resolution(col: Column) -> Column:
-    return F.shiftRight(col.bitwiseAND(H3_RES_MASK), H3_RES_OFFSET).cast("long")
+    return F.shiftright(col.bitwiseAND(H3_RES_MASK), H3_RES_OFFSET).cast("long")
 
 
 def __set_resolution(col: Column, res: Column) -> Column:
@@ -171,14 +205,7 @@ def __set_index_digit(col: Column, res: int, digit: int) -> Column:
 
 
 def __clear_all_digits_for_resolution(col: Column, res: Column) -> Column:
-    mask = (
-        F.expr(
-            f"shiftleft({__to_sql_long(1)},"
-            f"({__to_sql_long(MAX_H3_RES)} - {__to_sql_long(res)}) * {__to_sql_long(H3_PER_DIGIT_OFFSET)})"
-        )
-        - 1
-    )
-    return col.bitwiseOR(mask)
+    return col.bitwiseOR(__digits_after_res(res))
 
 
 def cell_to_parent(col: Column, parent_resolution: Union[int, Column]) -> Column:
@@ -190,9 +217,7 @@ def cell_to_parent(col: Column, parent_resolution: Union[int, Column]) -> Column
 
 
 def __resolution_mask(resolution: Column) -> Column:
-    offset = (MAX_H3_RES - resolution) * H3_PER_DIGIT_OFFSET
-    right_side = F.expr(f"shiftleft(CAST(1 as BIGINT), {__to_sql_long(offset)})") - 1
-    return F.lit((1 << H3_RES_OFFSET) - 1).bitwiseXOR(right_side)
+    return F.lit((1 << H3_RES_OFFSET) - 1).bitwiseXOR(__digits_after_res(resolution))
 
 
 def is_childof(child: Column, parent: Column):
@@ -202,23 +227,12 @@ def is_childof(child: Column, parent: Column):
 
 
 def get_base_cell(col: Column) -> Column:
-    return F.shiftRight(col.bitwiseAND(H3_BC_MASK), H3_BC_OFFSET)
+    return F.shiftright(col.bitwiseAND(H3_BC_MASK), H3_BC_OFFSET)
 
 
 def has_child_at_resolution(col: Column, child_resolution: Column) -> Column:
     parent_res = get_resolution(col)
-    return (child_resolution > parent_res) & (child_resolution < F.lit(MAX_H3_RES))
-
-
-def __all_resolution_digits(cell: Column):
-    resolution = get_resolution(cell)
-    shiftAmount = ((MAX_H3_RES - resolution) * H3_PER_DIGIT_OFFSET)._jc.toString()
-
-    # Kind of annoying but seems like the pyspark version of shiftleft|right doesn't accept expressions for the numBits
-    # I'll PR pyspark when I get the chance but this should do for now
-    return F.expr(f"shiftright({__to_sql_long(cell)}, {shiftAmount})").bitwiseAND(
-        F.expr(f"shiftleft(1, {__to_sql_long(resolution)} * {H3_PER_DIGIT_OFFSET})") - 1
-    )
+    return (child_resolution > parent_res) & (child_resolution <= F.lit(MAX_H3_RES))
 
 
 def __is_base_cell_pentagon(cell: Column):
@@ -226,8 +240,11 @@ def __is_base_cell_pentagon(cell: Column):
 
 
 def is_pentagon(cell: Column):
+    resolution_digits = F.lit(H3_DIGITS_MASK).bitwiseXOR(
+        __digits_after_res(get_resolution(cell))
+    )
     return __is_base_cell_pentagon(get_base_cell(cell)) & (
-        __all_resolution_digits(cell) == 0
+        cell.bitwiseAND(resolution_digits) == 0
     )
 
 
@@ -284,25 +301,55 @@ def cell_to_parent_fixed(
     return parent
 
 
-def minchild(cell: Column, resolution: Column) -> Column:
-    end_mask_pos = H3_BC_OFFSET - get_resolution(cell) * H3_PER_DIGIT_OFFSET - 1
-    start_mask_pos = H3_BC_OFFSET - resolution * H3_PER_DIGIT_OFFSET
-    mask = F.expr(
-        f"shiftLeft("
-        f"shiftLeft({__to_sql_long(1)}, {__to_sql_long(end_mask_pos)} - {__to_sql_long(start_mask_pos)} + 1) - 1,"
-        f"{__to_sql_long(start_mask_pos)})"
-    )
+def minchild(cell: Column, resolution: Union[int, Column]) -> Column:
+    resolution = __to_long_col(resolution)
+    masked = cell.bitwiseAND(F.bitwise_not(__digits_between(cell, resolution)))
+    return __set_resolution(masked, resolution)
+
+
+def maxchild(cell: Column, resolution: Union[int, Column]) -> Column:
+    # Unused digits are 7 (0b111), so clearing the lowest bit of each new digit sets it to 6
+    resolution = __to_long_col(resolution)
+    mask = __digits_between(cell, resolution).bitwiseAND(MAX_CHILD_MASK)
     masked = cell.bitwiseAND(F.bitwise_not(mask))
     return __set_resolution(masked, resolution)
 
 
-def maxchild(cell: Column, resolution: Column) -> Column:
-    res_diff = resolution - get_resolution(cell)
-    start_mask_pos = H3_BC_OFFSET - resolution * H3_PER_DIGIT_OFFSET
-    mask = F.expr(
-        f"shiftLeft("
-        f"shiftRight({MAX_CHILD_MASK}, {H3_BC_OFFSET} - {__to_sql_long(res_diff)} * {H3_PER_DIGIT_OFFSET}),"
-        f"{__to_sql_long(start_mask_pos)})"
+def cell_to_center_child(cell: Column, resolution: Union[int, Column]) -> Column:
+    """The center child has all new digits set to 0, which is also the min child"""
+    return minchild(cell, resolution)
+
+
+def is_res_class_III(cell: Column) -> Column:
+    return get_resolution(cell) % 2 == 1
+
+
+def get_num_cells(res: Union[int, Column]) -> Column:
+    return __lookup([h3.get_num_cells(r) for r in range(MAX_H3_RES + 1)], res)
+
+
+def average_hexagon_area(
+    res: Union[int, Column], unit: Union[AreaUnit, str] = AreaUnit.KM2
+) -> Column:
+    unit = AreaUnit(unit)
+    return __lookup(
+        [h3.average_hexagon_area(r, unit.value) for r in range(MAX_H3_RES + 1)], res
     )
-    masked = cell.bitwiseAND(F.bitwise_not(mask))
-    return __set_resolution(masked, resolution)
+
+
+def average_hexagon_edge_length(
+    res: Union[int, Column], unit: Union[LengthUnit, str] = LengthUnit.KM
+) -> Column:
+    unit = LengthUnit(unit)
+    return __lookup(
+        [h3.average_hexagon_edge_length(r, unit.value) for r in range(MAX_H3_RES + 1)],
+        res,
+    )
+
+
+def get_res0_cells() -> Column:
+    return __literal_array(h3.get_res0_cells().tolist())
+
+
+def get_pentagons(res: Union[int, Column]) -> Column:
+    return __lookup([h3.get_pentagons(r).tolist() for r in range(MAX_H3_RES + 1)], res)

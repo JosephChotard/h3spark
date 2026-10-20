@@ -127,6 +127,10 @@ class MyUDFTest(unittest.TestCase):
         # Checked with https://h3geo.org/docs/core-library/restable
         self.assertEqual(results[0]["result"], 98_825_162)
 
+    def test_get_num_cells_does_not_overflow(self):
+        test_df = self.get_df().withColumn("result", h3spark.get_num_cells(F.lit(15)))
+        self.assertEqual(test_df.collect()[0]["result"], 569_707_381_193_162)
+
     def test_average_hexagon_area(self):
         test_df = self.get_df()
         test_df = test_df.withColumn(
