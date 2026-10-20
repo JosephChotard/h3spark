@@ -1,5 +1,4 @@
 import warnings
-from typing import Union
 
 import h3.api.numpy_int as h3
 from pyspark.sql import functions as F
@@ -144,24 +143,20 @@ BASE_CELL_DATA = [
 ]
 
 
-PENTAGON_BASE_CELLS = [
-    i for i in range(len(BASE_CELL_DATA)) if BASE_CELL_DATA[i][1] == 1
-]
+PENTAGON_BASE_CELLS = [i for i in range(len(BASE_CELL_DATA)) if BASE_CELL_DATA[i][1] == 1]
 
 
-def __to_long_col(col: Union[int, Column]) -> Column:
+def __to_long_col(col: int | Column) -> Column:
     if isinstance(col, int):
         col = F.lit(col)
     return col.cast("long")
 
 
 def __literal_array(values: list) -> Column:
-    return F.array(
-        *[__literal_array(v) if isinstance(v, list) else F.lit(v) for v in values]
-    )
+    return F.array(*[__literal_array(v) if isinstance(v, list) else F.lit(v) for v in values])
 
 
-def __lookup(values: list, index: Union[int, Column]) -> Column:
+def __lookup(values: list, index: int | Column) -> Column:
     """
     Looks up a per-resolution constant. Spark constant-folds the literal array, so this avoids both UDFs and
     building SQL expression strings to shift by a column amount.
@@ -170,20 +165,16 @@ def __lookup(values: list, index: Union[int, Column]) -> Column:
 
 
 # Bits of every digit after resolution r, i.e. the digits that are unused (set to 7) for a cell at resolution r
-DIGITS_AFTER_RES = [
-    (1 << ((MAX_H3_RES - r) * H3_PER_DIGIT_OFFSET)) - 1 for r in range(MAX_H3_RES + 1)
-]
+DIGITS_AFTER_RES = [(1 << ((MAX_H3_RES - r) * H3_PER_DIGIT_OFFSET)) - 1 for r in range(MAX_H3_RES + 1)]
 
 
-def __digits_after_res(res: Union[int, Column]) -> Column:
+def __digits_after_res(res: int | Column) -> Column:
     return __lookup(DIGITS_AFTER_RES, res)
 
 
 def __digits_between(cell: Column, child_resolution: Column) -> Column:
     """Bits of the digits for resolutions in (get_resolution(cell), child_resolution]"""
-    return __digits_after_res(get_resolution(cell)).bitwiseXOR(
-        __digits_after_res(child_resolution)
-    )
+    return __digits_after_res(get_resolution(cell)).bitwiseXOR(__digits_after_res(child_resolution))
 
 
 def get_resolution(col: Column) -> Column:
@@ -192,9 +183,7 @@ def get_resolution(col: Column) -> Column:
 
 def __set_resolution(col: Column, res: Column) -> Column:
     """Should probably not be used directly"""
-    return col.bitwiseAND(H3_RES_MASK_NEGATIVE).bitwiseOR(
-        F.shiftleft(res.cast("long"), H3_RES_OFFSET)
-    )
+    return col.bitwiseAND(H3_RES_MASK_NEGATIVE).bitwiseOR(F.shiftleft(res.cast("long"), H3_RES_OFFSET))
 
 
 def __set_index_digit(col: Column, res: int, digit: int) -> Column:
@@ -208,7 +197,7 @@ def __clear_all_digits_for_resolution(col: Column, res: Column) -> Column:
     return col.bitwiseOR(__digits_after_res(res))
 
 
-def cell_to_parent(col: Column, parent_resolution: Union[int, Column]) -> Column:
+def cell_to_parent(col: Column, parent_resolution: int | Column) -> Column:
     """Doesn't validate that the parent_resolution is less than the current resolution"""
     if isinstance(parent_resolution, int):
         parent_resolution = F.lit(parent_resolution).cast("long")
@@ -240,17 +229,11 @@ def __is_base_cell_pentagon(cell: Column):
 
 
 def is_pentagon(cell: Column):
-    resolution_digits = F.lit(H3_DIGITS_MASK).bitwiseXOR(
-        __digits_after_res(get_resolution(cell))
-    )
-    return __is_base_cell_pentagon(get_base_cell(cell)) & (
-        cell.bitwiseAND(resolution_digits) == 0
-    )
+    resolution_digits = F.lit(H3_DIGITS_MASK).bitwiseXOR(__digits_after_res(get_resolution(cell)))
+    return __is_base_cell_pentagon(get_base_cell(cell)) & (cell.bitwiseAND(resolution_digits) == 0)
 
 
-def cell_to_children_size(
-    cell: Column, child_resolution: Column, validate_resolution: bool = False
-) -> Column:
+def cell_to_children_size(cell: Column, child_resolution: Column, validate_resolution: bool = False) -> Column:
     """
     If validate_resolution is False then it might produce incorrect results if the child_resolution is less than the
     parent resolution.
@@ -265,11 +248,7 @@ def cell_to_children_size(
     else:
         assertion = F.lit(None)
 
-    return F.floor(
-        F.when(
-            assertion.isNull() & is_pentagon(cell), 1 + 5 * (F.pow(7, n) - 1) / 6
-        ).otherwise(F.pow(7, n))
-    )
+    return F.floor(F.when(assertion.isNull() & is_pentagon(cell), 1 + 5 * (F.pow(7, n) - 1) / 6).otherwise(F.pow(7, n)))
 
 
 def str_to_int(col: Column) -> Column:
@@ -282,9 +261,7 @@ def int_to_str(col: Column) -> Column:
     return F.lower(F.hex(col))
 
 
-def cell_to_parent_fixed(
-    col: Column, current_resolution: int, parent_resolution: int
-) -> Column:
+def cell_to_parent_fixed(col: Column, current_resolution: int, parent_resolution: int) -> Column:
     """No validation, assume that all values of col are source_resolution + valid. Use at your own risk :)"""
     warnings.warn(
         "This function was a mistake, use cell_to_parent instead. Going to delete it at some point",
@@ -301,13 +278,13 @@ def cell_to_parent_fixed(
     return parent
 
 
-def minchild(cell: Column, resolution: Union[int, Column]) -> Column:
+def minchild(cell: Column, resolution: int | Column) -> Column:
     resolution = __to_long_col(resolution)
     masked = cell.bitwiseAND(F.bitwise_not(__digits_between(cell, resolution)))
     return __set_resolution(masked, resolution)
 
 
-def maxchild(cell: Column, resolution: Union[int, Column]) -> Column:
+def maxchild(cell: Column, resolution: int | Column) -> Column:
     # Unused digits are 7 (0b111), so clearing the lowest bit of each new digit sets it to 6
     resolution = __to_long_col(resolution)
     mask = __digits_between(cell, resolution).bitwiseAND(MAX_CHILD_MASK)
@@ -315,7 +292,7 @@ def maxchild(cell: Column, resolution: Union[int, Column]) -> Column:
     return __set_resolution(masked, resolution)
 
 
-def cell_to_center_child(cell: Column, resolution: Union[int, Column]) -> Column:
+def cell_to_center_child(cell: Column, resolution: int | Column) -> Column:
     """The center child has all new digits set to 0, which is also the min child"""
     return minchild(cell, resolution)
 
@@ -324,22 +301,16 @@ def is_res_class_III(cell: Column) -> Column:
     return get_resolution(cell) % 2 == 1
 
 
-def get_num_cells(res: Union[int, Column]) -> Column:
+def get_num_cells(res: int | Column) -> Column:
     return __lookup([h3.get_num_cells(r) for r in range(MAX_H3_RES + 1)], res)
 
 
-def average_hexagon_area(
-    res: Union[int, Column], unit: Union[AreaUnit, str] = AreaUnit.KM2
-) -> Column:
+def average_hexagon_area(res: int | Column, unit: AreaUnit | str = AreaUnit.KM2) -> Column:
     unit = AreaUnit(unit)
-    return __lookup(
-        [h3.average_hexagon_area(r, unit.value) for r in range(MAX_H3_RES + 1)], res
-    )
+    return __lookup([h3.average_hexagon_area(r, unit.value) for r in range(MAX_H3_RES + 1)], res)
 
 
-def average_hexagon_edge_length(
-    res: Union[int, Column], unit: Union[LengthUnit, str] = LengthUnit.KM
-) -> Column:
+def average_hexagon_edge_length(res: int | Column, unit: LengthUnit | str = LengthUnit.KM) -> Column:
     unit = LengthUnit(unit)
     return __lookup(
         [h3.average_hexagon_edge_length(r, unit.value) for r in range(MAX_H3_RES + 1)],
@@ -351,5 +322,5 @@ def get_res0_cells() -> Column:
     return __literal_array(h3.get_res0_cells().tolist())
 
 
-def get_pentagons(res: Union[int, Column]) -> Column:
+def get_pentagons(res: int | Column) -> Column:
     return __lookup([h3.get_pentagons(r).tolist() for r in range(MAX_H3_RES + 1)], res)

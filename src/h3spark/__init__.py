@@ -1,5 +1,4 @@
 import json
-from typing import List, Union
 
 import h3.api.numpy_int as h3
 from pyspark.sql import functions as F
@@ -18,7 +17,7 @@ def str_to_int(h3_str):
 
 
 @F.udf(T.StringType(), useArrow=True)
-def int_to_str(h3_int: Union[str, int]):
+def int_to_str(h3_int: str | int):
     """
     Note: We allow user to pass in a string as Spark does not support unsigned 64-bit integers.
     """
@@ -33,14 +32,14 @@ def get_num_cells(res: int):
 
 
 @F.udf(T.FloatType(), useArrow=True)
-def average_hexagon_area(res: int, unit: Union[AreaUnit, str] = AreaUnit.KM2):
+def average_hexagon_area(res: int, unit: AreaUnit | str = AreaUnit.KM2):
     if isinstance(unit, str):
         unit = AreaUnit(unit)
     return h3.average_hexagon_area(res, unit.value)
 
 
 @F.udf(T.FloatType(), useArrow=True)
-def average_hexagon_edge_length(res: int, unit: Union[LengthUnit, str] = LengthUnit.KM):
+def average_hexagon_edge_length(res: int, unit: LengthUnit | str = LengthUnit.KM):
     if isinstance(unit, str):
         unit = LengthUnit(unit)
     return h3.average_hexagon_edge_length(res, unit.value)
@@ -107,12 +106,12 @@ def child_pos_to_cell(parent: H3CellInput, res_child: int, child_pos: int):
 
 
 @F.udf(T.ArrayType(T.LongType()))
-def compact_cells(cells: List[H3CellInput]):
+def compact_cells(cells: list[H3CellInput]):
     return h3.compact_cells([to_h3_cell(c) for c in cells]).tolist()
 
 
 @F.udf(T.ArrayType(T.LongType()))
-def uncompact_cells(cells: List[H3CellInput], res: int):
+def uncompact_cells(cells: list[H3CellInput], res: int):
     return h3.uncompact_cells([to_h3_cell(c) for c in cells], res).tolist()
 
 
@@ -122,7 +121,7 @@ def h3shape_to_cells(shape: H3Shape, res: int):
 
 
 @F.udf(T.StringType(), useArrow=True)
-def cells_to_h3shape(cells: List[H3CellInput]):
+def cells_to_h3shape(cells: list[H3CellInput]):
     res = h3.cells_to_h3shape([to_h3_cell(c) for c in cells])
     return json.dumps(res.__geo_interface__)
 
@@ -183,7 +182,7 @@ def local_ij_to_cell(origin: H3CellInput, i: int, j: int):
 
 
 @F.udf(T.FloatType(), useArrow=True)
-def cell_area(cell: H3CellInput, unit: Union[AreaUnit, str] = AreaUnit.KM2):
+def cell_area(cell: H3CellInput, unit: AreaUnit | str = AreaUnit.KM2):
     if isinstance(unit, str):
         unit = AreaUnit(unit)
     return h3.cell_area(to_h3_cell(cell), unit.value)
