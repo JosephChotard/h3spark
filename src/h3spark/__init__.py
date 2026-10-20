@@ -9,6 +9,7 @@ from .models import BOUNDARY_TYPE, COORDINATE_TYPE, AreaUnit, LengthUnit
 from .utils import H3CellInput, H3Shape, to_h3_cell, to_h3_shape
 
 # Skipping functions relating to h3 edges and vertices for now
+# Arrow is only enabled for UDFs returning scalars or structs, it's slower than pickling for arrays
 
 
 @F.udf(T.LongType(), useArrow=True)
@@ -70,17 +71,17 @@ def grid_distance(cell1: H3CellInput, cell2: H3CellInput):
     return h3.grid_distance(to_h3_cell(cell1), to_h3_cell(cell2))
 
 
-@F.udf(BOUNDARY_TYPE, useArrow=True)
+@F.udf(BOUNDARY_TYPE)
 def cell_to_boundary(cell: H3CellInput):
     return h3.cell_to_boundary(to_h3_cell(cell))
 
 
-@F.udf(T.ArrayType(T.LongType()), useArrow=True)
+@F.udf(T.ArrayType(T.LongType()))
 def grid_disk(cell: H3CellInput, k: int):
     return h3.grid_disk(to_h3_cell(cell), k).tolist()
 
 
-@F.udf(T.ArrayType(T.LongType()), useArrow=True)
+@F.udf(T.ArrayType(T.LongType()))
 def grid_ring(cell: H3CellInput, k: int):
     return h3.grid_ring(to_h3_cell(cell), k).tolist()
 
@@ -90,7 +91,7 @@ def cell_to_children_size(cell: H3CellInput, res: int):
     return h3.cell_to_children_size(to_h3_cell(cell), res)
 
 
-@F.udf(T.ArrayType(T.LongType()), useArrow=True)
+@F.udf(T.ArrayType(T.LongType()))
 def cell_to_children(cell: H3CellInput, res: int):
     return h3.cell_to_children(to_h3_cell(cell), res).tolist()
 
@@ -105,17 +106,17 @@ def child_pos_to_cell(parent: H3CellInput, res_child: int, child_pos: int):
     return h3.child_pos_to_cell(to_h3_cell(parent), res_child, child_pos)
 
 
-@F.udf(T.ArrayType(T.LongType()), useArrow=True)
+@F.udf(T.ArrayType(T.LongType()))
 def compact_cells(cells: List[H3CellInput]):
     return h3.compact_cells([to_h3_cell(c) for c in cells]).tolist()
 
 
-@F.udf(T.ArrayType(T.LongType()), useArrow=True)
+@F.udf(T.ArrayType(T.LongType()))
 def uncompact_cells(cells: List[H3CellInput], res: int):
     return h3.uncompact_cells([to_h3_cell(c) for c in cells], res).tolist()
 
 
-@F.udf(T.ArrayType(T.LongType()), useArrow=True)
+@F.udf(T.ArrayType(T.LongType()))
 def h3shape_to_cells(shape: H3Shape, res: int):
     return h3.h3shape_to_cells(to_h3_shape(shape), res).tolist()
 
@@ -141,7 +142,7 @@ def are_neighbor_cells(cell1: H3CellInput, cell2: H3CellInput):
     return h3.are_neighbor_cells(to_h3_cell(cell1), to_h3_cell(cell2))
 
 
-@F.udf(T.ArrayType(T.LongType()), useArrow=True)
+@F.udf(T.ArrayType(T.LongType()))
 def grid_path_cells(start: H3CellInput, end: H3CellInput):
     return h3.grid_path_cells(to_h3_cell(start), to_h3_cell(end)).tolist()
 
@@ -151,12 +152,11 @@ def is_res_class_III(cell: H3CellInput):
     return h3.is_res_class_III(to_h3_cell(cell))
 
 
-@F.udf(T.ArrayType(T.LongType()), useArrow=True)
+@F.udf(T.ArrayType(T.LongType()))
 def get_pentagons(res: int):
     return h3.get_pentagons(res).tolist()
 
 
-# Arrow can't be used for UDFs without arguments
 @F.udf(T.ArrayType(T.LongType()))
 def get_res0_cells():
     return h3.get_res0_cells().tolist()
@@ -167,12 +167,12 @@ def cell_to_center_child(cell: H3CellInput, res: int):
     return h3.cell_to_center_child(to_h3_cell(cell), res)
 
 
-@F.udf(T.ArrayType(T.IntegerType()), useArrow=True)
+@F.udf(T.ArrayType(T.IntegerType()))
 def get_icosahedron_faces(cell: H3CellInput):
     return h3.get_icosahedron_faces(to_h3_cell(cell)).tolist()
 
 
-@F.udf(T.ArrayType(T.IntegerType()), useArrow=True)
+@F.udf(T.ArrayType(T.IntegerType()))
 def cell_to_local_ij(cell: H3CellInput):
     return h3.cell_to_local_ij(to_h3_cell(cell)).tolist()
 

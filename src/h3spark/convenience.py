@@ -20,7 +20,7 @@ def max_child(cell_id: H3CellInput, resolution: int):
     )
 
 
-@F.udf(T.ArrayType(T.LongType()), useArrow=True)
+@F.udf(T.ArrayType(T.LongType()))
 def h3shape_to_cells_compacted(shape: H3Shape, res: int):
     cells = h3.h3shape_to_cells(to_h3_shape(shape), res)
     compacted = h3.compact_cells(cells)

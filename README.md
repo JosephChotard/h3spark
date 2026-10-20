@@ -8,7 +8,7 @@ It also provides native implementations of some H3 functions that are more perfo
 
 ## Installation
 
-Requires PySpark 3.5+. The UDFs run with Arrow optimization enabled (`useArrow=True`), so `pandas` and `pyarrow` are installed via `pyspark[sql]`.
+Requires PySpark 3.5+. UDFs returning scalars or structs run with Arrow optimization enabled (`useArrow=True`), so `pandas` and `pyarrow` are installed via `pyspark[sql]`.
 
 You can install `h3spark` using either pip or conda.
 
