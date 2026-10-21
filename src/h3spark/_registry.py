@@ -17,7 +17,7 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
-from typing import Any, Callable, Literal, TypeVar
+from typing import Any, Callable, Literal, ParamSpec, TypeAlias, TypeVar, cast
 
 import h3.api.numpy_int as h3
 from pyspark.sql import functions as F
@@ -26,10 +26,11 @@ from pyspark.sql.column import Column
 
 from .utils import to_h3_cell, to_h3_shape
 
-ColumnOrName = Column | str
-IntOrColumn = int | Column | str
+ColumnOrName: TypeAlias = Column | str
+IntOrColumn: TypeAlias = int | ColumnOrName
 Returns = Literal["cell", "cells"] | None
 E = TypeVar("E", bound=Enum)
+P = ParamSpec("P")
 
 
 @dataclass(frozen=True)
@@ -148,7 +149,7 @@ def h3fn(
     static: dict[str, Callable[[Any], Any]] | None = None,
     returns: Returns = None,
     hex: bool | Literal["table"] = True,
-) -> Callable[[Callable], Callable[..., Column]]:
+) -> Callable[[Callable[P, Column]], Callable[P, Column]]:
     """
     h3: per-row Python implementation, called positionally with the non-static arguments (cells as ints).
     return_type: Spark type of the result.
@@ -165,7 +166,7 @@ def h3fn(
     """
     static = static or {}
 
-    def decorator(func: Callable) -> Callable[..., Column]:
+    def decorator(func: Callable[P, Column]) -> Callable[P, Column]:
         signature = inspect.signature(func)
         unknown = {*cells, *cell_lists, *shapes, *static} - set(signature.parameters)
         if unknown:
@@ -253,6 +254,7 @@ def h3fn(
             hex=hex,
         )
         REGISTRY[entry.name] = entry
-        return entry.default
+        # Typed as the decorated function, so type checkers see its real signature
+        return cast(Callable[P, Column], entry.default)
 
     return decorator

@@ -13,7 +13,10 @@ __all__ = sorted(name for name, entry in REGISTRY.items() if entry.native)
 globals().update({name: REGISTRY[name].native for name in __all__})
 
 # Names from h3spark < 0.3
-minchild = REGISTRY["min_child"].native
-maxchild = REGISTRY["max_child"].native
-get_base_cell = REGISTRY["get_base_cell_number"].native
-__all__ += ["get_base_cell", "maxchild", "minchild"]
+ALIASES = {
+    "get_base_cell": "get_base_cell_number",
+    "maxchild": "max_child",
+    "minchild": "min_child",
+}
+globals().update({alias: REGISTRY[name].native for alias, name in ALIASES.items()})
+__all__ += list(ALIASES)

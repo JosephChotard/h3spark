@@ -288,4 +288,12 @@ def local_ij_to_cell(
 def cell_area(cell: ColumnOrName, unit: AreaUnit | str = AreaUnit.KM2) -> Column: ...
 
 
-__all__ = ["AreaUnit", "BOUNDARY_TYPE", "COORDINATE_TYPE", "LengthUnit", *REGISTRY]
+__all__ = [
+    "AreaUnit",
+    "BOUNDARY_TYPE",
+    "COORDINATE_TYPE",
+    "ColumnOrName",
+    "IntOrColumn",
+    "LengthUnit",
+    *REGISTRY,
+]
