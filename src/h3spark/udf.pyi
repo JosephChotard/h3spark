@@ -24,6 +24,7 @@ __all__ = [
     "cells_to_h3shape",
     "child_pos_to_cell",
     "compact_cells",
+    "geometry_to_cells",
     "get_base_cell_number",
     "get_icosahedron_faces",
     "get_num_cells",
@@ -146,6 +147,15 @@ def child_pos_to_cell(
 
 def compact_cells(cells: ColumnOrName) -> Column:
     """Python UDF backed by h3-py. Cells may be long or hex strings.
+
+    Returns: Column[array<bigint>]
+    """
+
+def geometry_to_cells(geometry: ColumnOrName, res: int | ColumnOrName) -> Column:
+    """Python UDF backed by h3-py. Cells may be long or hex strings.
+
+    Cells overlapping a GeoJSON geometry string: Point, LineString, Polygon, their Multi versions or a
+    GeometryCollection. Cells that only touch a polygon's boundary may be left out.
 
     Returns: Column[array<bigint>]
     """

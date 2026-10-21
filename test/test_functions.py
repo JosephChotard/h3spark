@@ -49,6 +49,65 @@ def test_shapes(df):
     assert (row["cells"], row["compacted"], row["ring_cells"]) == (554, 122, 554)
 
 
+def sampled_cells(coordinates: list, res: int) -> set[int]:
+    """Cells of points every 1/1000 of each segment, which a covering must include"""
+    return {
+        int(
+            h3.latlng_to_cell(
+                lat1 + t / 1000 * (lat2 - lat1), lng1 + t / 1000 * (lng2 - lng1), res
+            )
+        )
+        for (lng1, lat1), (lng2, lat2) in zip(coordinates, coordinates[1:])
+        for t in range(1001)
+    }
+
+
+@pytest.mark.parametrize("res", [5, 8, 11])
+def test_geometry_to_cells_covers_lines_and_polygons(res):
+    geometry_to_cells = REGISTRY["geometry_to_cells"].reference
+    # A zigzag about 10 res 11 cells long, so it crosses many cells at res 11 and a few at res 5
+    line = [
+        [-89.9985, 29.8985],
+        [-89.9972, 29.8991],
+        [-89.9968, 29.8978],
+        [-89.9951, 29.8986],
+    ]
+    ring = [*line, line[0]]
+    for geometry, coordinates in [
+        ({"type": "LineString", "coordinates": line}, line),
+        ({"type": "Polygon", "coordinates": [ring]}, ring),
+    ]:
+        assert sampled_cells(coordinates, res) <= set(
+            geometry_to_cells(json.dumps(geometry), res)
+        )
+
+    # A polygon smaller than a cell, which h3shape_to_cells gives no cells for
+    assert geometry_to_cells(POLYGON, 7) == [
+        int(h3.latlng_to_cell(29.8987, -89.9982, 7))
+    ]
+
+
+def test_geometry_to_cells_geometry_types(df):
+    point = {"type": "Point", "coordinates": [-89.9982, 29.8987]}
+    expected = [int(h3.latlng_to_cell(29.8987, -89.9982, 9))]
+    geometries = [
+        point,
+        {"type": "MultiPoint", "coordinates": [point["coordinates"]] * 2},
+        {"type": "LineString", "coordinates": [point["coordinates"]] * 2},
+        {"type": "GeometryCollection", "geometries": [point]},
+    ]
+    rows = df.sparkSession.createDataFrame(
+        [(json.dumps(g),) for g in geometries], ["geometry"]
+    )
+    result = rows.select(
+        h3spark.geometry_to_cells("geometry", 9).alias("cells")
+    ).collect()
+    assert [r["cells"] for r in result] == [expected] * len(geometries)
+
+    with pytest.raises(ValueError, match="Unsupported GeoJSON geometry type 'Feature'"):
+        REGISTRY["geometry_to_cells"].reference(json.dumps({"type": "Feature"}), 9)
+
+
 def test_udfs_accept_hex_string_cells(df):
     row = df.select(
         h3spark.grid_disk("cell_str", 1).alias("disk"),

@@ -23,6 +23,7 @@ __all__ = [
     "cells_to_h3shape",
     "child_pos_to_cell",
     "compact_cells",
+    "geometry_to_cells",
     "get_base_cell_number",
     "get_icosahedron_faces",
     "get_num_cells",
@@ -158,6 +159,15 @@ def child_pos_to_cell(
 
 def compact_cells(cells: ColumnOrName) -> Column:
     """Hex string version of h3spark.compact_cells: cell arguments are hex string columns.
+
+    Returns: Column[array<string>]
+    """
+
+def geometry_to_cells(geometry: ColumnOrName, res: int | ColumnOrName) -> Column:
+    """Hex string version of h3spark.geometry_to_cells: cell arguments are hex string columns.
+
+    Cells overlapping a GeoJSON geometry string: Point, LineString, Polygon, their Multi versions or a
+    GeometryCollection. Cells that only touch a polygon's boundary may be left out.
 
     Returns: Column[array<string>]
     """

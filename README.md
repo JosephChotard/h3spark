@@ -83,9 +83,11 @@ Index both sides at the same resolution and join on the cell. H3 joins are appro
 
 ```python
 points = points.withColumn("cell", h3spark.latlng_to_cell("lat", "lng", 9))
-areas = areas.withColumn("cell", F.explode(h3spark.h3shape_to_cells("geojson", 9)))
+areas = areas.withColumn("cell", F.explode(h3spark.geometry_to_cells("geojson", 9)))
 candidates = points.join(areas, "cell")
 ```
+
+`geometry_to_cells` returns every cell a geometry overlaps, so no match is missed. `h3shape_to_cells` only returns cells whose center is inside the polygon, so a polygon smaller than a cell gets none.
 
 ## Performance
 
@@ -161,6 +163,7 @@ These follow the same rules as h3-py and return the same values for valid cells 
 - **`uncompact_cells(cells: array<H3CellInput>, res: int) -> array<long>`**: Uncompacts a set of cells to a resolution.
 - **`h3shape_to_cells(shape: H3Shape, res: int) -> array<long>`**: Cells covering a shape. `H3Shape` is a GeoJSON string, an array of `(lat, lng)`, or an array of arrays of `(lat, lng)`.
 - **`h3shape_to_cells_compacted(shape: H3Shape, res: int) -> array<long>`**: `h3shape_to_cells` followed by `compact_cells`, without an additional pass over the data.
+- **`geometry_to_cells(geometry: string, res: int) -> array<long>`**: Cells overlapping a GeoJSON geometry: `Point`, `LineString`, `Polygon`, their `Multi` versions or a `GeometryCollection`. Use it to index both sides of a spatial join. Cells that only touch a polygon's boundary may be left out.
 - **`cells_to_h3shape(cells: array<H3CellInput>) -> string`**: GeoJSON shape of a set of cells.
 - **`get_icosahedron_faces(cell: H3CellInput) -> array<int>`**: Icosahedron faces intersected by a cell.
 - **`cell_to_local_ij(origin: H3CellInput, cell: H3CellInput) -> array<int>`**: Local IJ coordinates of a cell relative to an origin.
@@ -209,6 +212,7 @@ Cells are converted with the native `str_to_int` / `int_to_str`, so natively imp
 | `h3_line` | `grid_path_cells` |
 | `h3_indexes_are_neighbors` | `are_neighbor_cells` |
 | `polyfill` | `h3shape_to_cells` |
+| `index_shape` | `geometry_to_cells` |
 | `h3_set_to_multi_polygon` | `cells_to_h3shape` |
 | `compact` / `uncompact` | `compact_cells` / `uncompact_cells` |
 | `cell_area` | `cell_area` |
@@ -222,10 +226,6 @@ Cells are converted with the native `str_to_int` / `int_to_str`, so natively imp
 | `string_to_h3` / `h3_to_string` | `str_to_int` / `int_to_str` |
 
 h3spark doesn't support directed edges and vertices yet.
-
-## Changelog
-
-See [CHANGELOG.md](https://github.com/JosephChotard/h3spark/blob/main/CHANGELOG.md), including the breaking changes in 0.3.0.
 
 ## Contributing
 
