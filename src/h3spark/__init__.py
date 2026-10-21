@@ -1,188 +1,291 @@
-import json
+"""
+PySpark wrappers around h3-py.
+
+Every function is defined once below with ``@h3fn`` (see ``h3spark._registry``). ``h3spark.<name>`` is the default
+implementation: native Spark expressions when the function has a body, otherwise a Python UDF calling h3-py.
+``h3spark.native``, ``h3spark.udf`` and ``h3spark.hex`` expose the native, UDF and hex string versions.
+
+Column arguments accept a ``Column`` or a column name; other arguments (e.g. ``res``, ``k``) also accept plain
+Python values. ``unit`` arguments are plain Python values resolved when the plan is built. Native implementations
+require ``LongType`` cells and do less validation than h3-py; UDFs accept long or hex string cells.
+"""
 
 import h3.api.numpy_int as h3
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
+from pyspark.sql.column import Column
 
+from . import _bits as B
+from ._registry import REGISTRY, ColumnOrName, IntOrColumn, h3fn, unit_value
 from .models import BOUNDARY_TYPE, COORDINATE_TYPE, AreaUnit, LengthUnit
-from .utils import H3CellInput, H3Shape, to_h3_cell, to_h3_shape
 
 # Skipping functions relating to h3 edges and vertices for now
-# Arrow is only enabled for UDFs returning scalars or structs, it's slower than pickling for arrays
+
+_LONG = T.LongType()
+_INT = T.IntegerType()
+_BOOL = T.BooleanType()
+_DOUBLE = T.DoubleType()
+_CELLS = T.ArrayType(T.LongType())
+_area_unit = unit_value(AreaUnit)
+_length_unit = unit_value(LengthUnit)
 
 
-@F.udf(T.LongType(), useArrow=True)
-def str_to_int(h3_str):
-    return h3.str_to_int(h3_str)
+def _h3_is_childof(child: int, parent: int) -> bool:
+    res = h3.get_resolution(parent)
+    return res <= h3.get_resolution(child) and h3.cell_to_parent(child, res) == parent
 
 
-@F.udf(T.StringType(), useArrow=True)
-def int_to_str(h3_int: str | int):
+def _h3_max_child(cell: int, res: int) -> int:
+    return h3.child_pos_to_cell(cell, res, h3.cell_to_children_size(cell, res) - 1)
+
+
+def _h3shape_to_cells_compacted(shape: h3.H3Shape, res: int):
+    return h3.compact_cells(h3.h3shape_to_cells(shape, res))
+
+
+# Native implementations
+
+
+@h3fn(h3=h3.str_to_int, return_type=_LONG, returns="cell", hex=False)
+def str_to_int(h3_str: ColumnOrName) -> Column:
+    """Parses a hex string cell. Performs no validation"""
+    return F.conv(h3_str, 16, 10).cast("long")
+
+
+@h3fn(h3=h3.int_to_str, return_type=T.StringType(), cells=("h3_int",), hex=False)
+def int_to_str(h3_int: ColumnOrName) -> Column:
+    """Formats a cell as a lowercase hex string. Performs no validation"""
+    return F.lower(F.hex(h3_int))
+
+
+@h3fn(h3=h3.get_resolution, return_type=_INT, cells=("cell",))
+def get_resolution(cell: ColumnOrName) -> Column:
+    return B.resolution(cell)
+
+
+@h3fn(h3=h3.get_base_cell_number, return_type=_INT, cells=("cell",))
+def get_base_cell_number(cell: ColumnOrName) -> Column:
+    return B.base_cell(cell)
+
+
+@h3fn(h3=h3.is_pentagon, return_type=_BOOL, cells=("cell",))
+def is_pentagon(cell: ColumnOrName) -> Column:
+    return B.is_pentagon(cell)
+
+
+@h3fn(h3=h3.is_res_class_III, return_type=_BOOL, cells=("cell",))
+def is_res_class_III(cell: ColumnOrName) -> Column:
+    return B.resolution(cell) % 2 == 1
+
+
+@h3fn(h3=h3.cell_to_parent, return_type=_LONG, cells=("cell",), returns="cell")
+def cell_to_parent(cell: ColumnOrName, res: IntOrColumn) -> Column:
+    """Native: doesn't validate that res is at most the cell's resolution"""
+    return B.set_resolution(cell.bitwiseOR(B.digits_after_res(res)), res)
+
+
+@h3fn(h3=h3.cell_to_center_child, return_type=_LONG, cells=("cell",), returns="cell")
+def min_child(cell: ColumnOrName, resolution: IntOrColumn) -> Column:
+    """Child with the lowest index, i.e. the center child. Native: doesn't validate the resolution"""
+    masked = cell.bitwiseAND(F.bitwise_not(B.digits_between(cell, resolution)))
+    return B.set_resolution(masked, resolution)
+
+
+@h3fn(h3=_h3_max_child, return_type=_LONG, cells=("cell",), returns="cell")
+def max_child(cell: ColumnOrName, resolution: IntOrColumn) -> Column:
+    """Child with the highest index. Native: doesn't validate the resolution"""
+    # Unused digits are 7 (0b111), so clearing the lowest bit of each new digit sets it to 6
+    mask = B.digits_between(cell, resolution).bitwiseAND(B.MAX_CHILD_MASK)
+    return B.set_resolution(cell.bitwiseAND(F.bitwise_not(mask)), resolution)
+
+
+@h3fn(h3=h3.cell_to_center_child, return_type=_LONG, cells=("cell",), returns="cell")
+def cell_to_center_child(cell: ColumnOrName, res: IntOrColumn) -> Column:
+    """The center child has all new digits set to 0. Native: doesn't validate the resolution"""
+    return min_child(cell, res)
+
+
+@h3fn(
+    h3=h3.cell_to_children_size,
+    return_type=_LONG,
+    cells=("cell",),
+    static={"validate_resolution": bool},
+)
+def cell_to_children_size(
+    cell: ColumnOrName, res: IntOrColumn, validate_resolution: bool = False
+) -> Column:
     """
-    Note: We allow user to pass in a string as Spark does not support unsigned 64-bit integers.
+    Native: null if res is lower than the cell's resolution, or an error if validate_resolution is True (or ANSI mode
+    is enabled)
     """
-    if isinstance(h3_int, str):
-        h3_int = int(h3_int)
-    return h3.int_to_str(h3_int)
+    n = res - B.resolution(cell)
+    size = F.when(B.is_pentagon(cell), B.lookup(B.PENTAGON_CHILDREN_SIZE, n)).otherwise(
+        B.lookup(B.HEXAGON_CHILDREN_SIZE, n)
+    )
+    if validate_resolution:
+        message = "Child resolution must be greater than or equal to parent resolution"
+        size = F.when(F.assert_true(n >= 0, message).isNull(), size)
+    return size
 
 
-@F.udf(T.LongType(), useArrow=True)
-def get_num_cells(res: int):
-    return h3.get_num_cells(res)
+@h3fn(h3=_h3_is_childof, return_type=_BOOL, cells=("child", "parent"))
+def is_childof(child: ColumnOrName, parent: ColumnOrName) -> Column:
+    """True if child is parent or one of its descendants"""
+    mask = F.lit((1 << B.H3_RES_OFFSET) - 1).bitwiseXOR(
+        B.digits_after_res(B.resolution(parent))
+    )
+    return child.bitwiseXOR(parent).bitwiseAND(mask) == 0
 
 
-@F.udf(T.FloatType(), useArrow=True)
-def average_hexagon_area(res: int, unit: AreaUnit | str = AreaUnit.KM2):
-    if isinstance(unit, str):
-        unit = AreaUnit(unit)
-    return h3.average_hexagon_area(res, unit.value)
+@h3fn(
+    h3=lambda cell, res: h3.get_resolution(cell) < res <= B.MAX_H3_RES,
+    return_type=_BOOL,
+    cells=("cell",),
+)
+def has_child_at_resolution(
+    cell: ColumnOrName, child_resolution: IntOrColumn
+) -> Column:
+    return (child_resolution > B.resolution(cell)) & (child_resolution <= B.MAX_H3_RES)
 
 
-@F.udf(T.FloatType(), useArrow=True)
-def average_hexagon_edge_length(res: int, unit: LengthUnit | str = LengthUnit.KM):
-    if isinstance(unit, str):
-        unit = LengthUnit(unit)
-    return h3.average_hexagon_edge_length(res, unit.value)
+@h3fn(h3=h3.get_num_cells, return_type=_LONG)
+def get_num_cells(res: IntOrColumn) -> Column:
+    return B.lookup([h3.get_num_cells(r) for r in B.RESOLUTIONS], res)
 
 
-@F.udf(T.LongType(), useArrow=True)
-def latlng_to_cell(lat: float, lng: float, res: int):
-    return h3.latlng_to_cell(lat, lng, res)
+@h3fn(h3=h3.average_hexagon_area, return_type=_DOUBLE, static={"unit": _area_unit})
+def average_hexagon_area(
+    res: IntOrColumn, unit: AreaUnit | str = AreaUnit.KM2
+) -> Column:
+    """Only km^2 and m^2 are supported by h3"""
+    return B.lookup([h3.average_hexagon_area(r, unit) for r in B.RESOLUTIONS], res)
 
 
-@F.udf(COORDINATE_TYPE, useArrow=True)
-def cell_to_latlng(cell: H3CellInput):
-    return h3.cell_to_latlng(to_h3_cell(cell))
+@h3fn(
+    h3=h3.average_hexagon_edge_length,
+    return_type=_DOUBLE,
+    static={"unit": _length_unit},
+)
+def average_hexagon_edge_length(
+    res: IntOrColumn, unit: LengthUnit | str = LengthUnit.KM
+) -> Column:
+    """Only km and m are supported by h3"""
+    lengths = [h3.average_hexagon_edge_length(r, unit) for r in B.RESOLUTIONS]
+    return B.lookup(lengths, res)
 
 
-@F.udf(T.ShortType(), useArrow=True)
-def get_resolution(cell: H3CellInput):
-    return h3.get_resolution(to_h3_cell(cell))
+@h3fn(h3=h3.get_pentagons, return_type=_CELLS, returns="cells")
+def get_pentagons(res: IntOrColumn) -> Column:
+    return B.lookup([h3.get_pentagons(r).tolist() for r in B.RESOLUTIONS], res)
 
 
-@F.udf(T.LongType(), useArrow=True)
-def cell_to_parent(cell: H3CellInput, res: int):
-    return h3.cell_to_parent(to_h3_cell(cell), res)
+@h3fn(h3=h3.get_res0_cells, return_type=_CELLS, returns="cells")
+def get_res0_cells() -> Column:
+    return B.literal_array(h3.get_res0_cells().tolist())
 
 
-@F.udf(T.IntegerType(), useArrow=True)
-def grid_distance(cell1: H3CellInput, cell2: H3CellInput):
-    return h3.grid_distance(to_h3_cell(cell1), to_h3_cell(cell2))
+# Python UDFs
 
 
-@F.udf(BOUNDARY_TYPE)
-def cell_to_boundary(cell: H3CellInput):
-    return h3.cell_to_boundary(to_h3_cell(cell))
+@h3fn(h3=h3.latlng_to_cell, return_type=_LONG, returns="cell")
+def latlng_to_cell(
+    lat: ColumnOrName | float, lng: ColumnOrName | float, res: IntOrColumn
+) -> Column: ...
 
 
-@F.udf(T.ArrayType(T.LongType()))
-def grid_disk(cell: H3CellInput, k: int):
-    return h3.grid_disk(to_h3_cell(cell), k).tolist()
+@h3fn(h3=h3.cell_to_latlng, return_type=COORDINATE_TYPE, cells=("cell",))
+def cell_to_latlng(cell: ColumnOrName) -> Column: ...
 
 
-@F.udf(T.ArrayType(T.LongType()))
-def grid_ring(cell: H3CellInput, k: int):
-    return h3.grid_ring(to_h3_cell(cell), k).tolist()
+@h3fn(h3=h3.grid_distance, return_type=_INT, cells=("cell1", "cell2"))
+def grid_distance(cell1: ColumnOrName, cell2: ColumnOrName) -> Column: ...
 
 
-@F.udf(T.IntegerType(), useArrow=True)
-def cell_to_children_size(cell: H3CellInput, res: int):
-    return h3.cell_to_children_size(to_h3_cell(cell), res)
+@h3fn(h3=h3.cell_to_boundary, return_type=BOUNDARY_TYPE, cells=("cell",))
+def cell_to_boundary(cell: ColumnOrName) -> Column: ...
 
 
-@F.udf(T.ArrayType(T.LongType()))
-def cell_to_children(cell: H3CellInput, res: int):
-    return h3.cell_to_children(to_h3_cell(cell), res).tolist()
+@h3fn(h3=h3.grid_disk, return_type=_CELLS, cells=("cell",), returns="cells")
+def grid_disk(cell: ColumnOrName, k: IntOrColumn) -> Column: ...
 
 
-@F.udf(T.IntegerType(), useArrow=True)
-def cell_to_child_pos(child: H3CellInput, res_parent: int):
-    return h3.cell_to_child_pos(to_h3_cell(child), res_parent)
+@h3fn(h3=h3.grid_ring, return_type=_CELLS, cells=("cell",), returns="cells")
+def grid_ring(cell: ColumnOrName, k: IntOrColumn) -> Column: ...
 
 
-@F.udf(T.LongType(), useArrow=True)
-def child_pos_to_cell(parent: H3CellInput, res_child: int, child_pos: int):
-    return h3.child_pos_to_cell(to_h3_cell(parent), res_child, child_pos)
+@h3fn(h3=h3.cell_to_children, return_type=_CELLS, cells=("cell",), returns="cells")
+def cell_to_children(cell: ColumnOrName, res: IntOrColumn) -> Column: ...
 
 
-@F.udf(T.ArrayType(T.LongType()))
-def compact_cells(cells: list[H3CellInput]):
-    return h3.compact_cells([to_h3_cell(c) for c in cells]).tolist()
+@h3fn(h3=h3.cell_to_child_pos, return_type=_LONG, cells=("child",))
+def cell_to_child_pos(child: ColumnOrName, res_parent: IntOrColumn) -> Column: ...
 
 
-@F.udf(T.ArrayType(T.LongType()))
-def uncompact_cells(cells: list[H3CellInput], res: int):
-    return h3.uncompact_cells([to_h3_cell(c) for c in cells], res).tolist()
+@h3fn(h3=h3.child_pos_to_cell, return_type=_LONG, cells=("parent",), returns="cell")
+def child_pos_to_cell(
+    parent: ColumnOrName, res_child: IntOrColumn, child_pos: IntOrColumn
+) -> Column: ...
 
 
-@F.udf(T.ArrayType(T.LongType()))
-def h3shape_to_cells(shape: H3Shape, res: int):
-    return h3.h3shape_to_cells(to_h3_shape(shape), res).tolist()
+@h3fn(h3=h3.compact_cells, return_type=_CELLS, cell_lists=("cells",), returns="cells")
+def compact_cells(cells: ColumnOrName) -> Column: ...
 
 
-@F.udf(T.StringType(), useArrow=True)
-def cells_to_h3shape(cells: list[H3CellInput]):
-    res = h3.cells_to_h3shape([to_h3_cell(c) for c in cells])
-    return json.dumps(res.__geo_interface__)
+@h3fn(h3=h3.uncompact_cells, return_type=_CELLS, cell_lists=("cells",), returns="cells")
+def uncompact_cells(cells: ColumnOrName, res: IntOrColumn) -> Column: ...
 
 
-@F.udf(T.BooleanType(), useArrow=True)
-def is_pentagon(cell: H3CellInput):
-    return h3.is_pentagon(to_h3_cell(cell))
+@h3fn(h3=h3.h3shape_to_cells, return_type=_CELLS, shapes=("shape",), returns="cells")
+def h3shape_to_cells(shape: ColumnOrName, res: IntOrColumn) -> Column:
+    """shape: GeoJSON string, or array of (lat, lng) / array of arrays of (lat, lng)"""
+    ...
 
 
-@F.udf(T.IntegerType(), useArrow=True)
-def get_base_cell_number(cell: H3CellInput):
-    return h3.get_base_cell_number(to_h3_cell(cell))
+@h3fn(
+    h3=_h3shape_to_cells_compacted,
+    return_type=_CELLS,
+    shapes=("shape",),
+    returns="cells",
+)
+def h3shape_to_cells_compacted(shape: ColumnOrName, res: IntOrColumn) -> Column:
+    """h3shape_to_cells followed by compact_cells, without an extra pass over the data"""
+    ...
 
 
-@F.udf(T.BooleanType(), useArrow=True)
-def are_neighbor_cells(cell1: H3CellInput, cell2: H3CellInput):
-    return h3.are_neighbor_cells(to_h3_cell(cell1), to_h3_cell(cell2))
+@h3fn(h3=h3.cells_to_h3shape, return_type=T.StringType(), cell_lists=("cells",))
+def cells_to_h3shape(cells: ColumnOrName) -> Column:
+    """GeoJSON string"""
+    ...
 
 
-@F.udf(T.ArrayType(T.LongType()))
-def grid_path_cells(start: H3CellInput, end: H3CellInput):
-    return h3.grid_path_cells(to_h3_cell(start), to_h3_cell(end)).tolist()
+@h3fn(h3=h3.are_neighbor_cells, return_type=_BOOL, cells=("cell1", "cell2"))
+def are_neighbor_cells(cell1: ColumnOrName, cell2: ColumnOrName) -> Column: ...
 
 
-@F.udf(T.BooleanType(), useArrow=True)
-def is_res_class_III(cell: H3CellInput):
-    return h3.is_res_class_III(to_h3_cell(cell))
+@h3fn(
+    h3=h3.grid_path_cells, return_type=_CELLS, cells=("start", "end"), returns="cells"
+)
+def grid_path_cells(start: ColumnOrName, end: ColumnOrName) -> Column: ...
 
 
-@F.udf(T.ArrayType(T.LongType()))
-def get_pentagons(res: int):
-    return h3.get_pentagons(res).tolist()
+@h3fn(h3=h3.get_icosahedron_faces, return_type=T.ArrayType(_INT), cells=("cell",))
+def get_icosahedron_faces(cell: ColumnOrName) -> Column: ...
 
 
-@F.udf(T.ArrayType(T.LongType()))
-def get_res0_cells():
-    return h3.get_res0_cells().tolist()
+@h3fn(h3=h3.cell_to_local_ij, return_type=T.ArrayType(_INT), cells=("origin", "cell"))
+def cell_to_local_ij(origin: ColumnOrName, cell: ColumnOrName) -> Column: ...
 
 
-@F.udf(T.LongType(), useArrow=True)
-def cell_to_center_child(cell: H3CellInput, res: int):
-    return h3.cell_to_center_child(to_h3_cell(cell), res)
+@h3fn(h3=h3.local_ij_to_cell, return_type=_LONG, cells=("origin",), returns="cell")
+def local_ij_to_cell(
+    origin: ColumnOrName, i: IntOrColumn, j: IntOrColumn
+) -> Column: ...
 
 
-@F.udf(T.ArrayType(T.IntegerType()))
-def get_icosahedron_faces(cell: H3CellInput):
-    return h3.get_icosahedron_faces(to_h3_cell(cell)).tolist()
+@h3fn(
+    h3=h3.cell_area, return_type=_DOUBLE, cells=("cell",), static={"unit": _area_unit}
+)
+def cell_area(cell: ColumnOrName, unit: AreaUnit | str = AreaUnit.KM2) -> Column: ...
 
 
-@F.udf(T.ArrayType(T.IntegerType()))
-def cell_to_local_ij(cell: H3CellInput):
-    return h3.cell_to_local_ij(to_h3_cell(cell)).tolist()
-
-
-@F.udf(T.LongType(), useArrow=True)
-def local_ij_to_cell(origin: H3CellInput, i: int, j: int):
-    return h3.local_ij_to_cell(to_h3_cell(origin), i, j)
-
-
-@F.udf(T.FloatType(), useArrow=True)
-def cell_area(cell: H3CellInput, unit: AreaUnit | str = AreaUnit.KM2):
-    if isinstance(unit, str):
-        unit = AreaUnit(unit)
-    return h3.cell_area(to_h3_cell(cell), unit.value)
+__all__ = ["AreaUnit", "BOUNDARY_TYPE", "COORDINATE_TYPE", "LengthUnit", *REGISTRY]

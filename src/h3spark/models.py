@@ -1,22 +1,13 @@
-from dataclasses import dataclass
 from enum import Enum
 
 from pyspark.sql import types as T
 
-
-@dataclass
-class Coordinates:
-    lat: float
-    lon: float
-
-    def from_tuple(self, tuple):
-        return Coordinates(lat=tuple[0], lon=tuple[1])
-
+__all__ = ["AreaUnit", "BOUNDARY_TYPE", "COORDINATE_TYPE", "LengthUnit"]
 
 COORDINATE_TYPE = T.StructType(
     [
-        T.StructField("lat", T.FloatType(), False),
-        T.StructField("lon", T.FloatType(), False),
+        T.StructField("lat", T.DoubleType(), False),
+        T.StructField("lon", T.DoubleType(), False),
     ]
 )
 
