@@ -1,39 +1,108 @@
-# h3spark
+# h3spark: H3 for PySpark
 
-![Tile the world in hexes](images/big_geo.jpeg "Tile the world in hexes")
+[![PyPI](https://img.shields.io/pypi/v/h3spark)](https://pypi.org/project/h3spark/)
+[![Conda](https://img.shields.io/conda/vn/conda-forge/h3spark)](https://anaconda.org/conda-forge/h3spark)
+[![Python](https://img.shields.io/pypi/pyversions/h3spark)](https://pypi.org/project/h3spark/)
+[![Tests](https://github.com/JosephChotard/h3spark/actions/workflows/test.yml/badge.svg)](https://github.com/JosephChotard/h3spark/actions/workflows/test.yml)
+[![License](https://img.shields.io/pypi/l/h3spark)](https://github.com/JosephChotard/h3spark/blob/main/LICENSE)
 
-`h3spark` is a Python library that provides a set of native and user-defined functions (UDFs) for working with H3 geospatial indexing in PySpark. The functions in this library follow the same assumptions and rules as the native H3 functions, allowing for seamless integration and usage in PySpark data pipelines.
+![Tile the world in hexes](https://raw.githubusercontent.com/JosephChotard/h3spark/main/images/big_geo.jpeg "Tile the world in hexes")
 
-Where possible, functions are implemented natively with Spark SQL expressions. This avoids the serialization/deserialization overhead of a Python UDF, at the cost of less validation than h3-py.
+**h3spark** brings [Uber's H3](https://h3geo.org) hexagonal hierarchical geospatial index to PySpark and Spark SQL, with the current h3 v4 API. Index points to H3 cells, roll cells up to parents, find neighbours, fill polygons and join datasets on H3 cells, at Spark scale.
+
+Most cell operations compile to native Spark SQL expressions that run in the JVM with no Python UDF, so they're several times faster than calling h3-py from a UDF. The rest wrap [h3-py](https://uber.github.io/h3-py/) 4.x.
+
+## Why h3spark
+
+- **h3 v4 API**: the same function names and behaviour as [h3-py 4.x](https://uber.github.io/h3-py/api_quick.html) (`latlng_to_cell`, `cell_to_parent`, `grid_disk`, `h3shape_to_cells`, ...).
+- **Fast**: native Spark expressions for cell inspection and hierarchy functions (`cell_to_parent`, `get_resolution`, `is_valid_cell`, `cell_to_children_size`, ...), and Arrow-optimized UDFs for the rest. See [performance](#performance).
+- **Long or string cells**: cells are `bigint` by default; `h3spark.hex` takes and returns hex string cells (`"89283082e73ffff"`) so you don't have to change your schemas.
+- **Spark 3.5 and 4, Spark Connect and Databricks**: works with classic sessions and Spark Connect, including Databricks shared and serverless compute.
+- **Typed**: ships type stubs, and passing the wrong cell type fails when the plan is built rather than halfway through a job.
 
 ## Installation
 
-Requires PySpark 3.5 or 4.x, classic or [Spark Connect](https://spark.apache.org/docs/latest/spark-connect-overview.html). UDFs returning scalars or structs run with Arrow optimization enabled (`useArrow=True`), so `pandas` and `pyarrow` are installed via `pyspark[sql]`.
-
-You can install `h3spark` using either pip or conda.
-
-### Using pip
 ```bash
 pip install h3spark
 ```
 
-### Using conda
+or
+
 ```bash
 conda install -c conda-forge h3spark
 ```
 
-## Usage
+Requires PySpark 3.5 or 4.x, classic or [Spark Connect](https://spark.apache.org/docs/latest/spark-connect-overview.html). UDFs returning scalars or structs run with Arrow optimization enabled (`useArrow=True`), so `pandas` and `pyarrow` are installed via `pyspark[sql]`.
+
+## Quickstart
 
 ```python
-from pyspark.sql import functions as F
+from pyspark.sql import SparkSession, functions as F
 import h3spark
 
-df.select(
-    h3spark.latlng_to_cell("lat", "lng", 9).alias("cell"),     # column names or Columns, plain Python ints
-    h3spark.cell_to_parent(F.col("cell"), 5).alias("parent"),  # native Spark expressions, no Python UDF
-    h3spark.cell_area("cell", "m^2").alias("area"),            # unit is a plain Python value
+spark = SparkSession.builder.getOrCreate()
+df = spark.createDataFrame([(37.769377, -122.388903)], ["lat", "lng"])
+
+df = (
+    df.withColumn("cell", h3spark.latlng_to_cell("lat", "lng", 9))  # point to H3 cell at resolution 9
+    .withColumn("parent", h3spark.cell_to_parent("cell", 5))        # native Spark expression, no UDF
+    .withColumn("neighbors", F.size(h3spark.grid_disk("cell", 1)))  # the cell and its neighbours
+    .withColumn("cell_str", h3spark.int_to_str("cell"))             # hex string representation
 )
+df.show()
 ```
+
+```
++---------+-----------+------------------+------------------+---------+---------------+
+|      lat|        lng|              cell|            parent|neighbors|       cell_str|
++---------+-----------+------------------+------------------+---------+---------------+
+|37.769377|-122.388903|617700170065510399|599685771850416127|        7|89283082e73ffff|
++---------+-----------+------------------+------------------+---------+---------------+
+```
+
+With cells stored as hex strings, use `h3spark.hex`:
+
+```python
+import h3spark.hex as h3hex
+
+df = spark.createDataFrame([("89283082e73ffff",)], ["cell"])
+df.select(h3hex.cell_to_parent("cell", 5), h3hex.get_resolution("cell")).show()
+```
+
+```
++-----------------------+--------------------+
+|cell_to_parent(cell, 5)|get_resolution(cell)|
++-----------------------+--------------------+
+|        85283083fffffff|                   9|
++-----------------------+--------------------+
+```
+
+### Spatial joins on H3 cells
+
+Index both sides at the same resolution and join on the cell. H3 joins are approximate: pairs in the same cell are candidates, to be confirmed with an exact geometry check if you need one.
+
+```python
+points = points.withColumn("cell", h3spark.latlng_to_cell("lat", "lng", 9))
+areas = areas.withColumn("cell", F.explode(h3spark.h3shape_to_cells("geojson", 9)))
+candidates = points.join(areas, "cell")
+```
+
+## Performance
+
+1M rows on a laptop (`local[8]`), best of 3, in seconds. h3-pyspark stores cells as strings, so compare it with `h3spark.hex`.
+
+| Function | h3-pyspark 1.2.6 (h3 v3) | h3spark.hex (string cells) | h3spark (long cells) |
+|---|---|---|---|
+| `latlng_to_cell` | 2.30 | 1.83 | 1.60 |
+| `cell_to_latlng` | 2.45 | 1.85 | 1.93 |
+| `cell_to_parent` | 1.69 | 0.52 | 0.12 |
+| `get_resolution` | 1.30 | 0.29 | 0.17 |
+| `is_valid_cell` | 1.36 | 0.55 | 0.27 |
+| `grid_disk` (k=1) | 5.21 | 3.94 | 3.21 |
+
+Run `uv run python bench/bench.py` to compare h3spark's native, UDF and hex versions on your machine.
+
+## Usage
 
 Every function comes in several flavours:
 
@@ -116,55 +185,56 @@ df.select(
 
 Cells are converted with the native `str_to_int` / `int_to_str`, so natively implemented functions stay entirely in the JVM (no Python UDF). The conversions do no more validation than the native functions. If you chain several operations, it's cheaper to convert once with `str_to_int` and work with long cells.
 
-## Changes in 0.4.0
+## Coming from h3-pyspark or h3 v3
 
-- Supports PySpark 4 and Spark Connect. With pyspark 3.5, 0.3.0 rejected Spark Connect `Column` objects.
-- New native `is_valid_cell`. `cell_to_child_pos` and `child_pos_to_cell` are now native (about 2-5x faster); `h3spark.udf` has the h3-py versions.
-- Passing a non-integral cell column to a native function fails when the plan is analysed rather than when the first row is processed, so it also fails for empty DataFrames.
-- Results are named like a function call (e.g. `grid_disk(cell, 1)`) instead of `row(cell, 1)` for UDFs or the whole expression for native functions.
-- Out of range resolutions give null in native functions also when ANSI mode is enabled (the default in Spark 4), instead of raising an array index error.
+[h3-pyspark](https://github.com/kevinschaich/h3-pyspark) uses the h3 v3 API, with cells as hex strings. h3spark uses h3 v4 names; with string cells, use `h3spark.hex`, which takes and returns hex strings like h3-pyspark. Plain Python values work for non-column arguments, so `F.lit(9)` can be just `9`.
 
-## Breaking changes in 0.3.0
+| h3-pyspark / h3 v3 | h3spark (h3 v4) |
+|---|---|
+| `geo_to_h3` | `latlng_to_cell` |
+| `h3_to_geo` | `cell_to_latlng` (returns `struct<lat, lon>`) |
+| `h3_to_geo_boundary` | `cell_to_boundary` |
+| `h3_to_parent` | `cell_to_parent` |
+| `h3_to_children` | `cell_to_children` |
+| `h3_to_center_child` | `cell_to_center_child` |
+| `h3_get_resolution` | `get_resolution` |
+| `h3_get_base_cell` | `get_base_cell_number` |
+| `h3_is_valid` | `is_valid_cell` |
+| `h3_is_pentagon` | `is_pentagon` |
+| `h3_is_res_class_III` | `is_res_class_III` |
+| `h3_get_faces` | `get_icosahedron_faces` |
+| `k_ring` | `grid_disk` |
+| `hex_ring` | `grid_ring` |
+| `h3_distance` | `grid_distance` |
+| `h3_line` | `grid_path_cells` |
+| `h3_indexes_are_neighbors` | `are_neighbor_cells` |
+| `polyfill` | `h3shape_to_cells` |
+| `h3_set_to_multi_polygon` | `cells_to_h3shape` |
+| `compact` / `uncompact` | `compact_cells` / `uncompact_cells` |
+| `cell_area` | `cell_area` |
+| `hex_area` | `average_hexagon_area` |
+| `edge_length` | `average_hexagon_edge_length` |
+| `num_hexagons` | `get_num_cells` |
+| `get_res0_indexes` | `get_res0_cells` |
+| `get_pentagon_indexes` | `get_pentagons` |
+| `experimental_h3_to_local_ij` | `cell_to_local_ij` |
+| `experimental_local_ij_to_h3` | `local_ij_to_cell` |
+| `string_to_h3` / `h3_to_string` | `str_to_int` / `int_to_str` |
 
-- Coordinates, areas and lengths are `DoubleType` instead of `FloatType`, which lost ~0.4m of precision. This affects `COORDINATE_TYPE`, `BOUNDARY_TYPE`, `cell_area`, `average_hexagon_area` and `average_hexagon_edge_length`.
-- Resolutions and base cell numbers are always `IntegerType`. Previously `get_resolution` returned `short` from `h3spark` and `long` from `h3spark.native`, and `get_base_cell` returned `long`. `cell_to_children_size` and `cell_to_child_pos` now return `long` (child positions overflowed `int`).
-- These functions are now native: `str_to_int`, `int_to_str`, `get_resolution`, `get_base_cell_number`, `is_pentagon`, `is_res_class_III`, `cell_to_parent`, `cell_to_center_child`, `cell_to_children_size`, `get_num_cells`, `average_hexagon_area`, `average_hexagon_edge_length`, `get_pentagons`, `get_res0_cells`, and `h3spark.convenience.min_child` / `max_child`. They require integral cell columns: a hex string column now raises an error naming the `h3spark.hex` equivalent. They also no longer raise on invalid cell values. **If you store cells as hex strings, use `h3spark.hex`.** For the previous h3-py backed behaviour, use `h3spark.udf`.
-- `unit` arguments must be plain Python values, not Columns (e.g. `average_hexagon_area(7, "km^2")` instead of `F.lit("km^2")`).
-- Public functions are plain Python functions returning Columns, not `UserDefinedFunction` objects, so they can't be passed to `spark.udf.register`.
-- `h3spark.native` functions use the same parameter names as `h3spark` (e.g. `cell_to_parent(cell, res)` instead of `(col, parent_resolution)`). `convenience.min_child` / `max_child` take `cell` instead of `cell_id`.
-- `cell_to_local_ij` takes `(origin, cell)` like h3-py (it previously always failed), and `get_icosahedron_faces` now works (it failed with h3 v4).
-- Removed the deprecated `h3spark.native.cell_to_parent_fixed`, the unused `h3spark.models.Coordinates`, and the `h3spark.native` constants (`BASE_CELL_DATA`, ...).
+h3spark doesn't support directed edges and vertices yet.
 
-## License
+## Changelog
 
-This library is released under the MIT License. See the [LICENSE](LICENSE) file for more details.
+See [CHANGELOG.md](https://github.com/JosephChotard/h3spark/blob/main/CHANGELOG.md), including the breaking changes in 0.3.0.
 
 ## Contributing
 
-Contributions are welcome! Please submit a pull request or open an issue to contribute to the project.
+Contributions are welcome: open an issue or a pull request. See [CONTRIBUTING.md](https://github.com/JosephChotard/h3spark/blob/main/CONTRIBUTING.md) for how functions are defined, tested and released.
 
-Every function is defined once in `src/h3spark/__init__.py` with the `@h3fn` decorator. The decorator declares the function's h3-py reference, its Spark return type, which parameters are cells (or arrays of cells, shapes, or plan-time values), and whether it returns cells:
+## License
 
-```python
-@h3fn(h3=h3.grid_disk, return_type=T.ArrayType(T.LongType()), cells=("cell",), returns="cells")
-def grid_disk(cell: ColumnOrName, k: IntOrColumn) -> Column: ...
-```
-
-A body of `...` gives a Python UDF built from `h3=`. A real body is the native implementation and becomes the default; cell arguments arrive as long Columns and other arguments as Columns. `h3spark.native`, `h3spark.udf`, `h3spark.hex` and the tests in `test/test_registry.py` are all generated from these definitions. Adding a function, or reimplementing one natively, needs nothing else, unless it introduces a new parameter name, which needs an argument generator in the test.
-
-`h3spark.native`, `h3spark.udf` and `h3spark.hex` are generated at runtime, so type checkers read their signatures from the committed stubs (`src/h3spark/*.pyi`). After adding or changing a function, regenerate them with `uv run python scripts/gen_stubs.py`; `test/test_stubs.py` fails if they're out of date. Top-level `h3spark` functions keep their real signatures through the decorator's typing. Use `hex="table"` for functions whose result only depends on a resolution, so the hex version is a precomputed lookup.
-
-```sh
-uv sync
-uv run pytest
-uv run black --check . && uv run flake8 .
-uv run python bench/bench.py --rows 1000000  # UDF vs native vs hex timings
-```
-
-Releases are published to PyPI by CI when a pull request labelled `release:patch`, `release:minor` or `release:major` is merged.
+MIT. See [LICENSE](https://github.com/JosephChotard/h3spark/blob/main/LICENSE).
 
 ## Acknowledgments
 
-This library is built on top of the H3 geospatial indexing library and PySpark. Special thanks to the developers of these libraries for their contributions to the open-source community.
-
-For more information, check the [official H3 documentation](https://h3geo.org/docs/) and [PySpark documentation](https://spark.apache.org/docs/latest/api/python/index.html).
+Built on [H3](https://h3geo.org/docs/), [h3-py](https://uber.github.io/h3-py/) and [PySpark](https://spark.apache.org/docs/latest/api/python/index.html). Thanks to their developers.
