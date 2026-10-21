@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 
 from pyspark.sql import types as T
 
@@ -21,3 +22,15 @@ COORDINATE_TYPE = T.StructType(
 
 
 BOUNDARY_TYPE = T.ArrayType(COORDINATE_TYPE)
+
+
+class AreaUnit(Enum):
+    KM2 = "km^2"
+    M2 = "m^2"
+    RADS2 = "rads^2"
+
+
+class LengthUnit(Enum):
+    KM = "km"
+    M = "m"
+    RADS = "rads"

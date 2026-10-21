@@ -8,6 +8,8 @@ It also provides native implementations of some H3 functions that are more perfo
 
 ## Installation
 
+Requires PySpark 3.5+. UDFs returning scalars or structs run with Arrow optimization enabled (`useArrow=True`), so `pandas` and `pyarrow` are installed via `pyspark[sql]`.
+
 You can install `h3spark` using either pip or conda.
 
 ### Using pip
@@ -30,13 +32,20 @@ Some of the functions have been reimplemented in pyspark for performance reasons
 
 Some H3 functions can ~mostly be reimplemented purely within pyspark. Doing so avoids the serialization/deserialization overhead of a UDF. These functions should be mostly equivalent to their C native counterparts while being more performant in pyspark. You can import them from `h3spark.native`
 
+- **`average_hexagon_area(res: int, unit: Union[AreaUnit, str] = AreaUnit.KM2) -> double`**: Average area of an H3 hexagon at a given resolution. `unit` is a python value, not a column. Only `km^2` and `m^2` are supported by h3
+- **`average_hexagon_edge_length(res: int, unit: Union[LengthUnit, str] = LengthUnit.KM) -> double`**: Average edge length of an H3 hexagon at a given resolution. `unit` is a python value, not a column. Only `km` and `m` are supported by h3
+- **`cell_to_center_child(cell: long, res: int) -> long`**: Finds the center child of the input H3 cell at the specified resolution. Equivalent to `minchild`
 - **`cell_to_children_size(cell: long, res: int, validate_resolution: Optional[bool] = False) -> int`**: Returns the number of children cells for a given cell at a specified resolution. If `validate_resolution` is set to True, it will throw an error if the resolution of the input cell is less than the requested child resolution.
 - **`cell_to_parent(cell: long, parent_resolution: int) -> long`**:  Converts an H3 cell to its parent cell at a specified resolution. Does not check if the parent resolution is valid or if the cell is valid
 - **`get_base_cell(cell: long) -> long`**: Retrieves the base cell number of an H3 cell.
+- **`get_num_cells(res: int) -> long`**: Returns the number of H3 cells at a given resolution.
+- **`get_pentagons(res: int) -> List[long]`**: Returns all pentagon cells at a given resolution.
+- **`get_res0_cells() -> List[long]`**: Returns all resolution 0 base cells.
 - **`get_resolution(cell: long) -> long`**: Retrieves the resolution of a given H3 cell.
 - **`int_to_str(cell: long) -> string`**: Converts an H3 integer to its string representation
 - **`is_childof(child: long, parent: long) -> bool`**: Checks if a cell is a child of another cell
 - **`is_pentagon(cell: long) -> bool`**: Checks if an H3 cell is a pentagon.
+- **`is_res_class_III(cell: long) -> bool`**: Checks if an H3 cell is of class III resolution.
 - **`maxchild(cell: long, resolution: int) -> long`**: Finds the child of maximum value of the input H3 cell at the specified resolution
 - **`minchild(cell: long, resolution: int) -> long`**: Finds the child of minimum value of the input H3 cell at the specified resolution
 - **`str_to_int(cell: string) -> long`**: Converts an H3 string to its integer representation
@@ -47,9 +56,9 @@ Some H3 functions can ~mostly be reimplemented purely within pyspark. Doing so a
 
 - **`str_to_int(h3_str: string) -> long`**: Converts an H3 string to an integer. _Has a pyspark native equivalent_
 - **`int_to_str(h3_int: Union[str, int]) -> string`**: Converts an H3 integer to a string. Allows strings due to Spark's limitation with unsigned 64-bit integers. _Has a pyspark native equivalent_
-- **`get_num_cells(res: int) -> int`**: Returns the number of H3 cells at a given resolution.
-- **`average_hexagon_area(res: int, unit: Union[AreaUnit, str] = AreaUnit.KM2) -> float`**: Calculates the average area of an H3 hexagon at a given resolution and unit.
-- **`average_hexagon_edge_length(res: int, unit: Union[LengthUnit, str] = LengthUnit.KM) -> float`**: Computes the average edge length of an H3 hexagon at a specified resolution and unit.
+- **`get_num_cells(res: int) -> long`**: Returns the number of H3 cells at a given resolution. _Has a pyspark native equivalent_
+- **`average_hexagon_area(res: int, unit: Union[AreaUnit, str] = AreaUnit.KM2) -> float`**: Calculates the average area of an H3 hexagon at a given resolution and unit. _Has a pyspark native equivalent_
+- **`average_hexagon_edge_length(res: int, unit: Union[LengthUnit, str] = LengthUnit.KM) -> float`**: Computes the average edge length of an H3 hexagon at a specified resolution and unit. _Has a pyspark native equivalent_
 - **`latlng_to_cell(lat: float, lng: float, res: int) -> long`**: Converts latitude and longitude to an H3 cell at a specified resolution.
 - **`cell_to_latlng(cell: H3CellInput) -> COORDINATE_TYPE`**: Converts an H3 cell to its central latitude and longitude.
 - **`get_resolution(cell: H3CellInput) -> short`**: Retrieves the resolution of a given H3 cell. _Has a pyspark native equivalent_
@@ -70,10 +79,10 @@ Some H3 functions can ~mostly be reimplemented purely within pyspark. Doing so a
 - **`get_base_cell_number(cell: H3CellInput) -> int`**: Retrieves the base cell number of an H3 cell. _Has a pyspark native equivalent_
 - **`are_neighbor_cells(cell1: H3CellInput, cell2: H3CellInput) -> bool`**: Checks if two H3 cells are neighbors.
 - **`grid_path_cells(start: H3CellInput, end: H3CellInput) -> List[long]`**: Finds the grid path between two H3 cells.
-- **`is_res_class_III(cell: H3CellInput) -> bool`**: Checks if an H3 cell is of class III resolution.
-- **`get_pentagons(res: int) -> List[long]`**: Returns all pentagon cells at a given resolution.
-- **`get_res0_cells() -> List[long]`**: Returns all resolution 0 base cells.
-- **`cell_to_center_child(cell: H3CellInput, res: int) -> long`**: Finds the center child cell of a given cell at a specified resolution.
+- **`is_res_class_III(cell: H3CellInput) -> bool`**: Checks if an H3 cell is of class III resolution. _Has a pyspark native equivalent_
+- **`get_pentagons(res: int) -> List[long]`**: Returns all pentagon cells at a given resolution. _Has a pyspark native equivalent_
+- **`get_res0_cells() -> List[long]`**: Returns all resolution 0 base cells. _Has a pyspark native equivalent_
+- **`cell_to_center_child(cell: H3CellInput, res: int) -> long`**: Finds the center child cell of a given cell at a specified resolution. _Has a pyspark native equivalent_
 - **`get_icosahedron_faces(cell: H3CellInput) -> List[int]`**: Retrieves icosahedron face indexes for a given H3 cell.
 - **`cell_to_local_ij(cell: H3CellInput) -> List[int]`**: Converts an H3 cell to local IJ coordinates.
 - **`local_ij_to_cell(origin: H3CellInput, i: int, j: int) -> long`**: Converts local IJ coordinates back to an H3 cell.
@@ -83,8 +92,8 @@ Some H3 functions can ~mostly be reimplemented purely within pyspark. Doing so a
 
 We provide some functions that wrap other h3 functions for streamlining commonly used operations. You can import them from `h3spark.convenience`
 
-- **`min_child(cell: H3CellInput, resolution: int) -> long`**: Finds the child of minimum value of the input H3 cell at the specified resolution
-- **`max_child(cell: H3CellInput, resolution: int) -> long`**: Finds the child of maximum value of the input H3 cell at the specified resolution
+- **`min_child(cell: H3CellInput, resolution: int) -> long`**: Finds the child of minimum value of the input H3 cell at the specified resolution. Prefer `h3spark.native.minchild` for long inputs
+- **`max_child(cell: H3CellInput, resolution: int) -> long`**: Finds the child of maximum value of the input H3 cell at the specified resolution. Prefer `h3spark.native.maxchild` for long inputs
 - **`h3shape_to_cells_compacted(shape: H3Shape, res: int) -> List[long]`**: Converts a shape to H3 cells at a specified resolution and compacts the result. Avoids the need to call `compact_cells` after `h3shape_to_cells` (which requires an additional pass over the data)
 
 ## License

@@ -1,9 +1,8 @@
 import json
-from typing import List, Tuple, Union
 
 import h3.api.numpy_int as h3
 
-H3CellInput = Union[str, int]
+H3CellInput = str | int
 
 
 def to_h3_cell(value: H3CellInput) -> int:
@@ -12,7 +11,7 @@ def to_h3_cell(value: H3CellInput) -> int:
     return value
 
 
-H3Shape = Union[str, List[Tuple[float, float]], List[List[Tuple[float, float]]]]
+H3Shape = str | list[tuple[float, float]] | list[list[tuple[float, float]]]
 
 
 def to_h3_shape(shape: H3Shape) -> h3.H3Shape:
