@@ -6,15 +6,40 @@ build-backend = "hatchling.build"
 name = "h3spark"
 dynamic = ["version"]
 authors = [{ name = "Joseph Chotard", email = "h3spark@chotard.com" }]
-description = "Lightweight pyspark wrapper for h3-py"
+description = "H3 for PySpark: Uber's H3 hexagonal geospatial index as fast native Spark SQL functions. h3 v4 API, Spark 3.5 and 4, Spark Connect and Databricks."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT License" }
-keywords = ["h3", "h3-py", "spark", "pyspark"]
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = [
+    "h3",
+    "h3-py",
+    "uber-h3",
+    "pyspark",
+    "spark",
+    "spark-sql",
+    "spark-connect",
+    "databricks",
+    "geospatial",
+    "gis",
+    "hexagon",
+    "hexagonal-grid",
+    "spatial-index",
+    "dggs",
+]
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Typing :: Typed",
 ]
 dependencies = [
     "h3>=4.1",
@@ -32,4 +57,8 @@ source = "vcs"
 dev = ["black==26.10.1", "flake8", "pytest>=9.1.1"]
 
 [project.urls]
-# todo
+Homepage = "https://github.com/JosephChotard/h3spark"
+Documentation = "https://github.com/JosephChotard/h3spark#readme"
+Repository = "https://github.com/JosephChotard/h3spark"
+Issues = "https://github.com/JosephChotard/h3spark/issues"
+Changelog = "https://github.com/JosephChotard/h3spark/blob/main/CHANGELOG.md"
