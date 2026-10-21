@@ -143,7 +143,9 @@ BASE_CELL_DATA = [
 ]
 
 
-PENTAGON_BASE_CELLS = [i for i in range(len(BASE_CELL_DATA)) if BASE_CELL_DATA[i][1] == 1]
+PENTAGON_BASE_CELLS = [
+    i for i in range(len(BASE_CELL_DATA)) if BASE_CELL_DATA[i][1] == 1
+]
 
 
 def __to_long_col(col: int | Column) -> Column:
@@ -153,7 +155,9 @@ def __to_long_col(col: int | Column) -> Column:
 
 
 def __literal_array(values: list) -> Column:
-    return F.array(*[__literal_array(v) if isinstance(v, list) else F.lit(v) for v in values])
+    return F.array(
+        *[__literal_array(v) if isinstance(v, list) else F.lit(v) for v in values]
+    )
 
 
 def __lookup(values: list, index: int | Column) -> Column:
@@ -165,7 +169,9 @@ def __lookup(values: list, index: int | Column) -> Column:
 
 
 # Bits of every digit after resolution r, i.e. the digits that are unused (set to 7) for a cell at resolution r
-DIGITS_AFTER_RES = [(1 << ((MAX_H3_RES - r) * H3_PER_DIGIT_OFFSET)) - 1 for r in range(MAX_H3_RES + 1)]
+DIGITS_AFTER_RES = [
+    (1 << ((MAX_H3_RES - r) * H3_PER_DIGIT_OFFSET)) - 1 for r in range(MAX_H3_RES + 1)
+]
 
 
 def __digits_after_res(res: int | Column) -> Column:
@@ -174,7 +180,9 @@ def __digits_after_res(res: int | Column) -> Column:
 
 def __digits_between(cell: Column, child_resolution: Column) -> Column:
     """Bits of the digits for resolutions in (get_resolution(cell), child_resolution]"""
-    return __digits_after_res(get_resolution(cell)).bitwiseXOR(__digits_after_res(child_resolution))
+    return __digits_after_res(get_resolution(cell)).bitwiseXOR(
+        __digits_after_res(child_resolution)
+    )
 
 
 def get_resolution(col: Column) -> Column:
@@ -183,7 +191,9 @@ def get_resolution(col: Column) -> Column:
 
 def __set_resolution(col: Column, res: Column) -> Column:
     """Should probably not be used directly"""
-    return col.bitwiseAND(H3_RES_MASK_NEGATIVE).bitwiseOR(F.shiftleft(res.cast("long"), H3_RES_OFFSET))
+    return col.bitwiseAND(H3_RES_MASK_NEGATIVE).bitwiseOR(
+        F.shiftleft(res.cast("long"), H3_RES_OFFSET)
+    )
 
 
 def __set_index_digit(col: Column, res: int, digit: int) -> Column:
@@ -229,11 +239,17 @@ def __is_base_cell_pentagon(cell: Column):
 
 
 def is_pentagon(cell: Column):
-    resolution_digits = F.lit(H3_DIGITS_MASK).bitwiseXOR(__digits_after_res(get_resolution(cell)))
-    return __is_base_cell_pentagon(get_base_cell(cell)) & (cell.bitwiseAND(resolution_digits) == 0)
+    resolution_digits = F.lit(H3_DIGITS_MASK).bitwiseXOR(
+        __digits_after_res(get_resolution(cell))
+    )
+    return __is_base_cell_pentagon(get_base_cell(cell)) & (
+        cell.bitwiseAND(resolution_digits) == 0
+    )
 
 
-def cell_to_children_size(cell: Column, child_resolution: Column, validate_resolution: bool = False) -> Column:
+def cell_to_children_size(
+    cell: Column, child_resolution: Column, validate_resolution: bool = False
+) -> Column:
     """
     If validate_resolution is False then it might produce incorrect results if the child_resolution is less than the
     parent resolution.
@@ -248,7 +264,11 @@ def cell_to_children_size(cell: Column, child_resolution: Column, validate_resol
     else:
         assertion = F.lit(None)
 
-    return F.floor(F.when(assertion.isNull() & is_pentagon(cell), 1 + 5 * (F.pow(7, n) - 1) / 6).otherwise(F.pow(7, n)))
+    return F.floor(
+        F.when(
+            assertion.isNull() & is_pentagon(cell), 1 + 5 * (F.pow(7, n) - 1) / 6
+        ).otherwise(F.pow(7, n))
+    )
 
 
 def str_to_int(col: Column) -> Column:
@@ -261,7 +281,9 @@ def int_to_str(col: Column) -> Column:
     return F.lower(F.hex(col))
 
 
-def cell_to_parent_fixed(col: Column, current_resolution: int, parent_resolution: int) -> Column:
+def cell_to_parent_fixed(
+    col: Column, current_resolution: int, parent_resolution: int
+) -> Column:
     """No validation, assume that all values of col are source_resolution + valid. Use at your own risk :)"""
     warnings.warn(
         "This function was a mistake, use cell_to_parent instead. Going to delete it at some point",
@@ -305,12 +327,18 @@ def get_num_cells(res: int | Column) -> Column:
     return __lookup([h3.get_num_cells(r) for r in range(MAX_H3_RES + 1)], res)
 
 
-def average_hexagon_area(res: int | Column, unit: AreaUnit | str = AreaUnit.KM2) -> Column:
+def average_hexagon_area(
+    res: int | Column, unit: AreaUnit | str = AreaUnit.KM2
+) -> Column:
     unit = AreaUnit(unit)
-    return __lookup([h3.average_hexagon_area(r, unit.value) for r in range(MAX_H3_RES + 1)], res)
+    return __lookup(
+        [h3.average_hexagon_area(r, unit.value) for r in range(MAX_H3_RES + 1)], res
+    )
 
 
-def average_hexagon_edge_length(res: int | Column, unit: LengthUnit | str = LengthUnit.KM) -> Column:
+def average_hexagon_edge_length(
+    res: int | Column, unit: LengthUnit | str = LengthUnit.KM
+) -> Column:
     unit = LengthUnit(unit)
     return __lookup(
         [h3.average_hexagon_edge_length(r, unit.value) for r in range(MAX_H3_RES + 1)],
