@@ -71,6 +71,28 @@ def column_arg(value: Any) -> Column:
     return F.lit(value)
 
 
+_INTEGRAL_TYPES = ["bigint", "int", "smallint", "tinyint"]
+
+
+def long_cells(col: Column, name: str, has_hex: bool, array: bool = False) -> Column:
+    """
+    Casts an integral cell (or array of cells) column to long, raising for any other type instead of silently
+    producing nulls. typeof is constant-folded, so for integral columns this is just the cast.
+    """
+    allowed = [f"array<{t}>" for t in _INTEGRAL_TYPES] if array else _INTEGRAL_TYPES
+    expected = "array<bigint>" if array else "bigint"
+    hint = f"h3spark.hex.{name} or " if has_hex else ""
+    col_type = F.typeof(col)
+    message = F.concat(
+        F.lit(f"{name} expects {expected} cells, got "),
+        col_type,
+        F.lit(f". For hex string cells use {hint}h3spark.str_to_int"),
+    )
+    return F.when(~col_type.isin(allowed), F.raise_error(message)).otherwise(
+        col.cast(expected)
+    )
+
+
 def unit_value(unit_type: type[E]) -> Callable[[E | str], str]:
     """Static converter accepting an enum member or its value"""
 
@@ -206,9 +228,11 @@ def h3fn(
             bound = bind(args, kwargs)
             for p in column_params:
                 value = bound.arguments[p]
-                bound.arguments[p] = (
-                    to_col(value).cast("long") if p in cells else column_arg(value)
-                )
+                if p in cells or p in cell_lists:
+                    value = long_cells(
+                        to_col(value), func.__name__, hex, p in cell_lists
+                    )
+                bound.arguments[p] = column_arg(value)
             return func(*bound.args, **bound.kwargs)
 
         if func.__name__ in REGISTRY:

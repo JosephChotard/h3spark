@@ -46,7 +46,7 @@ Arguments:
 
 - Column arguments accept a `Column` or a column name (`str`). Other arguments, such as `res` or `k`, also accept plain Python values (`res=9`, no `F.lit` needed).
 - `unit` arguments (`AreaUnit`/`LengthUnit` or their string values) are plain Python values resolved when the plan is built, not columns.
-- Cells are 64-bit integers (`LongType`). Native functions cast their cell arguments to long, so hex string cells become null. Convert them with `str_to_int` or use `h3spark.hex`. Python UDFs still accept either long or hex string cells (`H3CellInput = Union[str, int]`).
+- Cells are 64-bit integers (`LongType`). Native functions accept integral cell columns (`bigint`, `int`, ...) and raise an error for any other type, such as hex strings, even if every value is null. Convert hex strings with `str_to_int` or use `h3spark.hex`. Python UDFs still accept either long or hex string cells (`H3CellInput = Union[str, int]`).
 
 Types: resolutions and base cell numbers are `int`, cells and counts are `long` (`bigint`), and areas, lengths and coordinates are `double`. `COORDINATE_TYPE` is `struct<lat: double, lon: double>` and `BOUNDARY_TYPE` is an array of it.
 
@@ -118,7 +118,7 @@ Cells are converted with the native `str_to_int` / `int_to_str`, so natively imp
 
 - Coordinates, areas and lengths are `DoubleType` instead of `FloatType`, which lost ~0.4m of precision. This affects `COORDINATE_TYPE`, `BOUNDARY_TYPE`, `cell_area`, `average_hexagon_area` and `average_hexagon_edge_length`.
 - Resolutions and base cell numbers are always `IntegerType`. Previously `get_resolution` returned `short` from `h3spark` and `long` from `h3spark.native`, and `get_base_cell` returned `long`. `cell_to_children_size` and `cell_to_child_pos` now return `long` (child positions overflowed `int`).
-- These functions are now native: `str_to_int`, `int_to_str`, `get_resolution`, `get_base_cell_number`, `is_pentagon`, `is_res_class_III`, `cell_to_parent`, `cell_to_center_child`, `cell_to_children_size`, `get_num_cells`, `average_hexagon_area`, `average_hexagon_edge_length`, `get_pentagons`, `get_res0_cells`, and `h3spark.convenience.min_child` / `max_child`. They require long cells (hex strings become null) and no longer raise on invalid input. **If you store cells as hex strings, use `h3spark.hex`.** For the previous h3-py backed behaviour, use `h3spark.udf`.
+- These functions are now native: `str_to_int`, `int_to_str`, `get_resolution`, `get_base_cell_number`, `is_pentagon`, `is_res_class_III`, `cell_to_parent`, `cell_to_center_child`, `cell_to_children_size`, `get_num_cells`, `average_hexagon_area`, `average_hexagon_edge_length`, `get_pentagons`, `get_res0_cells`, and `h3spark.convenience.min_child` / `max_child`. They require integral cell columns: a hex string column now raises an error naming the `h3spark.hex` equivalent. They also no longer raise on invalid cell values. **If you store cells as hex strings, use `h3spark.hex`.** For the previous h3-py backed behaviour, use `h3spark.udf`.
 - `unit` arguments must be plain Python values, not Columns (e.g. `average_hexagon_area(7, "km^2")` instead of `F.lit("km^2")`).
 - Public functions are plain Python functions returning Columns, not `UserDefinedFunction` objects, so they can't be passed to `spark.udf.register`.
 - `h3spark.native` functions use the same parameter names as `h3spark` (e.g. `cell_to_parent(cell, res)` instead of `(col, parent_resolution)`). `convenience.min_child` / `max_child` take `cell` instead of `cell_id`.

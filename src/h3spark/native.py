@@ -4,7 +4,7 @@ functions in ``h3spark`` that have a native body.
 
 These avoid Python UDF overhead but do far less validation than h3-py: for valid cells and in-range resolutions they
 return the same values as h3-py, while invalid input produces null or meaningless values instead of raising. Cells
-must be ``LongType`` (other types are cast to long, so hex strings become null: use ``str_to_int`` or ``h3spark.hex``).
+must be integral columns; other types (e.g. hex strings) raise an error: use ``str_to_int`` or ``h3spark.hex``.
 """
 
 from . import REGISTRY

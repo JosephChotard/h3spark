@@ -46,12 +46,32 @@ def test_udfs_accept_hex_string_cells(df):
     row = df.select(
         h3spark.grid_disk("cell_str", 1).alias("disk"),
         h3spark_u.cell_to_parent("cell_str", 0).alias("parent"),
-        h3spark.cell_to_parent("cell_str", 0).alias("native_parent"),
     ).first()
     assert row["disk"] == h3.grid_disk(CELL, 1).tolist()
     assert row["parent"] == h3.cell_to_parent(CELL, 0)
-    # Native functions need long cells: hex strings cast to null
-    assert row["native_parent"] is None
+
+
+NATIVE_CALLS = {
+    "get_resolution": lambda cell: h3spark.get_resolution(cell),
+    "cell_to_parent": lambda cell: h3spark.cell_to_parent(cell, 0),
+    "is_childof": lambda cell: h3spark_n.is_childof(cell, cell),
+}
+
+
+@pytest.mark.parametrize("name", NATIVE_CALLS)
+@pytest.mark.parametrize("cell_type", ["bigint", "int"])
+def test_native_accepts_integral_cells(spark, name, cell_type):
+    df = spark.createDataFrame([(1,), (None,)], f"cell {cell_type}")
+    df.select(NATIVE_CALLS[name]("cell")).collect()
+
+
+@pytest.mark.parametrize("name", NATIVE_CALLS)
+@pytest.mark.parametrize("values", [[(CELL_STR,)], [(None,), (None,)]])
+def test_native_rejects_string_cells(spark, name, values):
+    df = spark.createDataFrame(values, "cell string")
+    message = f"{name} expects bigint cells, got string. For hex string cells use h3spark.hex.{name}"
+    with pytest.raises(Exception, match=message):
+        df.select(NATIVE_CALLS[name]("cell")).collect()
 
 
 def test_validate_resolution(df):
