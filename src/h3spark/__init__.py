@@ -174,12 +174,12 @@ def average_hexagon_edge_length(
     return B.lookup(lengths, res)
 
 
-@h3fn(h3=h3.get_pentagons, return_type=_CELLS, returns="cells")
+@h3fn(h3=h3.get_pentagons, return_type=_CELLS, returns="cells", hex="table")
 def get_pentagons(res: IntOrColumn) -> Column:
     return B.lookup([h3.get_pentagons(r).tolist() for r in B.RESOLUTIONS], res)
 
 
-@h3fn(h3=h3.get_res0_cells, return_type=_CELLS, returns="cells")
+@h3fn(h3=h3.get_res0_cells, return_type=_CELLS, returns="cells", hex="table")
 def get_res0_cells() -> Column:
     return B.literal_array(h3.get_res0_cells().tolist())
 

@@ -45,8 +45,8 @@ class H3Function:
     cell_lists: tuple[str, ...]
     static: tuple[str, ...]
     returns: Returns
-    # Whether h3spark.hex exposes a hex string version
-    hex: bool
+    # Whether h3spark.hex exposes a hex string version, "table" to precompute it per resolution
+    hex: bool | Literal["table"]
 
     @property
     def default(self) -> Callable[..., Column]:
@@ -147,7 +147,7 @@ def h3fn(
     shapes: tuple[str, ...] = (),
     static: dict[str, Callable[[Any], Any]] | None = None,
     returns: Returns = None,
-    hex: bool = True,
+    hex: bool | Literal["table"] = True,
 ) -> Callable[[Callable], Callable[..., Column]]:
     """
     h3: per-row Python implementation, called positionally with the non-static arguments (cells as ints).
@@ -157,7 +157,9 @@ def h3fn(
     static: plan-time parameters (not columns) mapped to a converter. The converted value is passed to the native body
         and, if `h3` accepts a parameter of that name, as a keyword argument to `h3`. One UDF is built per value.
     returns: "cell" / "cells" if the result is a cell / array of cells (used by h3spark.hex).
-    hex: whether h3spark.hex exposes a hex string version.
+    hex: whether h3spark.hex exposes a hex string version. "table" for functions whose result only depends on a
+        resolution (or nothing): the hex version looks up hex strings precomputed from `h3` for every resolution, so
+        Spark can constant-fold it instead of converting every row.
 
     Every other argument becomes a Column: column names and plain Python literals (e.g. res=9) are accepted.
     """

@@ -15,12 +15,43 @@ import functools
 from pyspark.sql import functions as F
 from pyspark.sql.column import Column
 
+import h3.api.numpy_int as h3
+
 from . import REGISTRY, int_to_str, str_to_int
-from ._registry import H3Function, to_col
+from . import _bits as B
+from ._registry import H3Function, column_arg, to_col
+
+
+def _to_hex(value):
+    return (
+        [_to_hex(v) for v in value] if isinstance(value, list) else h3.int_to_str(value)
+    )
+
+
+def _hex_table(entry: H3Function):
+    """
+    Hex version of a function of (at most) a resolution: a lookup in hex strings precomputed at import, which Spark
+    constant-folds like the native version
+    """
+    params = list(entry.signature.parameters)
+    if not params:
+        values = _to_hex(entry.reference())
+        return functools.wraps(entry.default)(lambda: B.literal_array(values))
+    (param,) = params
+    table = [_to_hex(entry.reference(r)) for r in B.RESOLUTIONS]
+
+    @functools.wraps(entry.default)
+    def wrapper(*args, **kwargs) -> Column:
+        bound = entry.signature.bind(*args, **kwargs)
+        return B.lookup(table, column_arg(bound.arguments[param]))
+
+    return wrapper
 
 
 def _hexify(entry: H3Function):
     func = entry.default
+    if entry.hex == "table":
+        return _hex_table(entry)
     if not (entry.cells or entry.cell_lists or entry.returns):
         return func
 
