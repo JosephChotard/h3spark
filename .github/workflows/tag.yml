@@ -1,0 +1,61 @@
+name: Tag release
+
+# When a PR labelled release:patch, release:minor or release:major is merged,
+# bump the latest v* tag accordingly, push it, and kick off release.yml on it.
+
+on:
+  # pull_request_target so PRs from forks still get a write token. Safe because
+  # this only runs after merge and checks out the merge commit on main.
+  pull_request_target:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tag-release
+
+jobs:
+  tag:
+    if: >-
+      github.event.pull_request.merged &&
+      (contains(github.event.pull_request.labels.*.name, 'release:patch') ||
+       contains(github.event.pull_request.labels.*.name, 'release:minor') ||
+       contains(github.event.pull_request.labels.*.name, 'release:major'))
+    runs-on: ubuntu-latest
+    permissions:
+      # Used to push the tag
+      contents: write
+      # Used to dispatch release.yml, since tags pushed with GITHUB_TOKEN don't trigger workflows
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+      - name: Compute next version
+        id: version
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          latest=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*')
+          IFS=. read -r major minor patch <<< "${latest#v}"
+          case "$LABELS" in
+            *'"release:major"'*) major=$((major + 1)); minor=0; patch=0 ;;
+            *'"release:minor"'*) minor=$((minor + 1)); patch=0 ;;
+            *) patch=$((patch + 1)) ;;
+          esac
+          echo "Bumping $latest -> v$major.$minor.$patch"
+          echo "tag=v$major.$minor.$patch" >> "$GITHUB_OUTPUT"
+      - name: Push tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git tag "$TAG"
+          git push origin "$TAG"
+      - name: Trigger release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh workflow run release.yml --ref "$TAG"

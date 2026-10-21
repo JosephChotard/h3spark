@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "h3spark"
-version = "0.2.0"
+dynamic = ["version"]
 authors = [{ name = "Joseph Chotard", email = "h3spark@chotard.com" }]
 description = "Lightweight pyspark wrapper for h3-py"
 readme = "README.md"
@@ -22,6 +22,9 @@ dependencies = [
     "pyarrow<26",
     "setuptools; python_version >= '3.12'",
 ]
+
+[tool.hatch.version]
+source = "vcs"
 
 [dependency-groups]
 dev = ["black", "flake8", "pytest>=9.1.1"]
