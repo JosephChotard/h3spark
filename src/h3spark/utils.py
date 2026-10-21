@@ -2,6 +2,8 @@ import json
 
 import h3.api.numpy_int as h3
 
+__all__ = ["H3CellInput", "H3Shape", "to_h3_cell", "to_h3_shape"]
+
 H3CellInput = str | int
 
 

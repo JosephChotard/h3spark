@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from src.h3spark import utils
+from h3spark import utils
 
 input_geom = {
     "type": "Polygon",
