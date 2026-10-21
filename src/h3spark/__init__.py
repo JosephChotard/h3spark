@@ -10,6 +10,8 @@ Python values. ``unit`` arguments are plain Python values resolved when the plan
 require ``LongType`` cells and do less validation than h3-py; UDFs accept long or hex string cells.
 """
 
+import json
+
 import h3.api.numpy_int as h3
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
@@ -46,6 +48,44 @@ def _h3_max_child(cell: int, res: int) -> int:
 
 def _h3shape_to_cells_compacted(shape: h3.H3Shape, res: int):
     return h3.compact_cells(h3.h3shape_to_cells(shape, res))
+
+
+def _overlapping_cells(geometry: dict, res: int) -> set[int]:
+    kind = geometry["type"]
+    if kind == "GeometryCollection":
+        return set().union(
+            *(_overlapping_cells(g, res) for g in geometry["geometries"])
+        )
+    if kind.startswith("Multi"):
+        single = kind.removeprefix("Multi")
+        return set().union(
+            *(
+                _overlapping_cells({"type": single, "coordinates": c}, res)
+                for c in geometry["coordinates"]
+            )
+        )
+    if kind == "Point":
+        lng, lat = geometry["coordinates"][:2]
+        return {int(h3.latlng_to_cell(lat, lng, res))}
+    if kind == "LineString":
+        points = [(lat, lng) for lng, lat, *_ in geometry["coordinates"]]
+        if len(set(points)) == 1:
+            return {int(h3.latlng_to_cell(*points[0], res))}
+        # h3 only fills polygons: walk the line there and back as a polygon with no area
+        line = h3.LatLngPoly(points + points[-2::-1])
+        return set(
+            h3.h3shape_to_cells_experimental(line, res, contain="overlap").tolist()
+        )
+    if kind == "Polygon":
+        polygon = h3.geo_to_h3shape(geometry)
+        return set(
+            h3.h3shape_to_cells_experimental(polygon, res, contain="overlap").tolist()
+        )
+    raise ValueError(f"Unsupported GeoJSON geometry type {kind!r}")
+
+
+def _geometry_to_cells(geometry: str, res: int) -> list[int]:
+    return sorted(_overlapping_cells(json.loads(geometry), res))
 
 
 # Native implementations
@@ -262,6 +302,15 @@ def h3shape_to_cells(shape: ColumnOrName, res: IntOrColumn) -> Column:
 )
 def h3shape_to_cells_compacted(shape: ColumnOrName, res: IntOrColumn) -> Column:
     """h3shape_to_cells followed by compact_cells, without an extra pass over the data"""
+    ...
+
+
+@h3fn(h3=_geometry_to_cells, return_type=_CELLS, returns="cells")
+def geometry_to_cells(geometry: ColumnOrName, res: IntOrColumn) -> Column:
+    """
+    Cells overlapping a GeoJSON geometry string: Point, LineString, Polygon, their Multi versions or a
+    GeometryCollection. Cells that only touch a polygon's boundary may be left out.
+    """
     ...
 
 

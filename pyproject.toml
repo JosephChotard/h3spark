@@ -42,7 +42,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "h3>=4.1",
+    "h3>=4.2",
     "pyspark[sql]>=3.5,<5",
     # pyarrow 26 needs numpy 2, which pyspark 3.5 doesn't support
     "pyarrow<26",
@@ -61,4 +61,3 @@ Homepage = "https://github.com/JosephChotard/h3spark"
 Documentation = "https://github.com/JosephChotard/h3spark#readme"
 Repository = "https://github.com/JosephChotard/h3spark"
 Issues = "https://github.com/JosephChotard/h3spark/issues"
-Changelog = "https://github.com/JosephChotard/h3spark/blob/main/CHANGELOG.md"

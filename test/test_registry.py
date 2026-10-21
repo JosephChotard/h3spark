@@ -78,6 +78,20 @@ def generate_args(rng: random.Random, cell: int, small: bool) -> dict:
     except Exception:
         i, j = 0, 0
     lat, lng = h3.cell_to_latlng(cell)
+    other_lat, other_lng = h3.cell_to_latlng(other)
+    shape = h3.cells_to_h3shape([cell]).__geo_interface__
+    geometry = [
+        {"type": "Point", "coordinates": [lng, lat]},
+        {"type": "LineString", "coordinates": [[lng, lat], [other_lng, other_lat]]},
+        shape,
+        {
+            "type": "GeometryCollection",
+            "geometries": [
+                shape,
+                {"type": "MultiPoint", "coordinates": [[other_lng, other_lat]]},
+            ],
+        },
+    ][res % 4]
     return {
         **dict.fromkeys(["cell", "h3_int", "child", "cell1", "start"], cell),
         **dict.fromkeys(["cell2", "end", "origin"], other),
@@ -94,7 +108,8 @@ def generate_args(rng: random.Random, cell: int, small: bool) -> dict:
         "lat": lat,
         "lng": lng,
         "cells": h3.cell_to_children(cell, min(res + 1, MAX_RES)).tolist(),
-        "shape": json.dumps(h3.cells_to_h3shape([cell]).__geo_interface__),
+        "shape": json.dumps(shape),
+        "geometry": json.dumps(geometry),
     }
 
 
