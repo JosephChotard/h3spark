@@ -4,7 +4,7 @@
 
 `h3spark` is a Python library that provides a set of native and user-defined functions (UDFs) for working with H3 geospatial indexing in PySpark. The functions in this library follow the same assumptions and rules as the native H3 functions, allowing for seamless integration and usage in PySpark data pipelines.
 
-It also provides native implementations of some H3 functions that are more performant in PySpark than using UDFs. These functions are reimplemented in PySpark and avoid the serialization/deserialization overhead of a UDF but do not have the same level of validation as the native H3 functions.
+Where possible, functions are implemented natively with Spark SQL expressions. This avoids the serialization/deserialization overhead of a Python UDF, at the cost of less validation than h3-py.
 
 ## Installation
 
@@ -24,77 +24,106 @@ conda install -c conda-forge h3spark
 
 ## Usage
 
-Below is a brief overview of the available functions in `h3spark`. These functions are designed to work with PySpark DataFrames and provide H3 functionality within a distributed data processing environment.
+```python
+from pyspark.sql import functions as F
+import h3spark
 
-Some of the functions have been reimplemented in pyspark for performance reasons. These functions can be imported from `h3spark.native`. The rest of the functions are wrappers around the native H3 functions and can be imported from `h3spark`. Note that the native functions strive to be as close to the original H3 functions as possible, but there may be some differences in behavior around edge cases + less validation.
+df.select(
+    h3spark.latlng_to_cell("lat", "lng", 9).alias("cell"),     # column names or Columns, plain Python ints
+    h3spark.cell_to_parent(F.col("cell"), 5).alias("parent"),  # native Spark expressions, no Python UDF
+    h3spark.cell_area("cell", "m^2").alias("area"),            # unit is a plain Python value
+)
+```
 
-### Spark native Functions
+Every function comes in several flavours:
 
-Some H3 functions can ~mostly be reimplemented purely within pyspark. Doing so avoids the serialization/deserialization overhead of a UDF. These functions should be mostly equivalent to their C native counterparts while being more performant in pyspark. You can import them from `h3spark.native`
+- **`h3spark.<fn>`**: the default. Natively implemented functions (see below) are pure Spark SQL expressions, which avoid the serialization overhead of Python UDFs. Everything else is a Python UDF calling h3-py.
+- **`h3spark.native.<fn>`**: only the natively implemented functions. The 0.2 names `minchild`, `maxchild` and `get_base_cell` still work.
+- **`h3spark.udf.<fn>`**: always the Python UDF backed by h3-py, for every function. Use it when you want h3-py's validation, or a reference to compare against.
+- **`h3spark.hex.<fn>`**: the default, but taking and returning cells as hex strings (see below).
 
-- **`average_hexagon_area(res: int, unit: Union[AreaUnit, str] = AreaUnit.KM2) -> double`**: Average area of an H3 hexagon at a given resolution. `unit` is a python value, not a column. Only `km^2` and `m^2` are supported by h3
-- **`average_hexagon_edge_length(res: int, unit: Union[LengthUnit, str] = LengthUnit.KM) -> double`**: Average edge length of an H3 hexagon at a given resolution. `unit` is a python value, not a column. Only `km` and `m` are supported by h3
-- **`cell_to_center_child(cell: long, res: int) -> long`**: Finds the center child of the input H3 cell at the specified resolution. Equivalent to `minchild`
-- **`cell_to_children_size(cell: long, res: int, validate_resolution: Optional[bool] = False) -> int`**: Returns the number of children cells for a given cell at a specified resolution. If `validate_resolution` is set to True, it will throw an error if the resolution of the input cell is less than the requested child resolution.
-- **`cell_to_parent(cell: long, parent_resolution: int) -> long`**:  Converts an H3 cell to its parent cell at a specified resolution. Does not check if the parent resolution is valid or if the cell is valid
-- **`get_base_cell(cell: long) -> long`**: Retrieves the base cell number of an H3 cell.
-- **`get_num_cells(res: int) -> long`**: Returns the number of H3 cells at a given resolution.
-- **`get_pentagons(res: int) -> List[long]`**: Returns all pentagon cells at a given resolution.
-- **`get_res0_cells() -> List[long]`**: Returns all resolution 0 base cells.
-- **`get_resolution(cell: long) -> long`**: Retrieves the resolution of a given H3 cell.
-- **`int_to_str(cell: long) -> string`**: Converts an H3 integer to its string representation
-- **`is_childof(child: long, parent: long) -> bool`**: Checks if a cell is a child of another cell
-- **`is_pentagon(cell: long) -> bool`**: Checks if an H3 cell is a pentagon.
-- **`is_res_class_III(cell: long) -> bool`**: Checks if an H3 cell is of class III resolution.
-- **`maxchild(cell: long, resolution: int) -> long`**: Finds the child of maximum value of the input H3 cell at the specified resolution
-- **`minchild(cell: long, resolution: int) -> long`**: Finds the child of minimum value of the input H3 cell at the specified resolution
-- **`str_to_int(cell: string) -> long`**: Converts an H3 string to its integer representation
+Arguments:
 
-### Functions
+- Column arguments accept a `Column` or a column name (`str`). Other arguments, such as `res` or `k`, also accept plain Python values (`res=9`, no `F.lit` needed).
+- `unit` arguments (`AreaUnit`/`LengthUnit` or their string values) are plain Python values resolved when the plan is built, not columns.
+- Cells are 64-bit integers (`LongType`). Native functions cast their cell arguments to long, so hex string cells become null. Convert them with `str_to_int` or use `h3spark.hex`. Python UDFs still accept either long or hex string cells (`H3CellInput = Union[str, int]`).
 
-`H3CellInput` is a type alias that represents an H3 cell, which can be either a hexadecimal string or a long integer (`H3CellInput = Union[str, int]`). h3spark will handle conversion from between types if required by h3. Prefer long integers if possible for more efficient processing.
+Types: resolutions and base cell numbers are `int`, cells and counts are `long` (`bigint`), and areas, lengths and coordinates are `double`. `COORDINATE_TYPE` is `struct<lat: double, lon: double>` and `BOUNDARY_TYPE` is an array of it.
 
-- **`str_to_int(h3_str: string) -> long`**: Converts an H3 string to an integer. _Has a pyspark native equivalent_
-- **`int_to_str(h3_int: Union[str, int]) -> string`**: Converts an H3 integer to a string. Allows strings due to Spark's limitation with unsigned 64-bit integers. _Has a pyspark native equivalent_
-- **`get_num_cells(res: int) -> long`**: Returns the number of H3 cells at a given resolution. _Has a pyspark native equivalent_
-- **`average_hexagon_area(res: int, unit: Union[AreaUnit, str] = AreaUnit.KM2) -> float`**: Calculates the average area of an H3 hexagon at a given resolution and unit. _Has a pyspark native equivalent_
-- **`average_hexagon_edge_length(res: int, unit: Union[LengthUnit, str] = LengthUnit.KM) -> float`**: Computes the average edge length of an H3 hexagon at a specified resolution and unit. _Has a pyspark native equivalent_
-- **`latlng_to_cell(lat: float, lng: float, res: int) -> long`**: Converts latitude and longitude to an H3 cell at a specified resolution.
-- **`cell_to_latlng(cell: H3CellInput) -> COORDINATE_TYPE`**: Converts an H3 cell to its central latitude and longitude.
-- **`get_resolution(cell: H3CellInput) -> short`**: Retrieves the resolution of a given H3 cell. _Has a pyspark native equivalent_
-- **`cell_to_parent(cell: H3CellInput, res: int) -> long`**: Converts an H3 cell to its parent cell at a specified resolution. _Has a pyspark native equivalent_
-- **`grid_distance(cell1: H3CellInput, cell2: H3CellInput) -> int`**: Calculates the distance in grid cells between two H3 cells. _Has a pyspark native equivalent if the cell's resolution and parent are literals_
-- **`cell_to_boundary(cell: H3CellInput) -> BOUNDARY_TYPE`**: Returns the boundary of an H3 cell as a list of coordinates.
-- **`grid_disk(cell: H3CellInput, k: int) -> List[long]`**: Returns all cells within k rings around the given H3 cell.
-- **`grid_ring(cell: H3CellInput, k: int) -> List[long]`**: Returns cells in a ring of k distance from the given H3 cell.
-- **`cell_to_children_size(cell: H3CellInput, res: int) -> int`**: Returns the number of children cells for a given cell at a specified resolution. _Has a pyspark native equivalent_
-- **`cell_to_children(cell: H3CellInput, res: int) -> List[long]`**: Returns the children of an H3 cell at a specified resolution.
-- **`cell_to_child_pos(child: H3CellInput, res_parent: int) -> int`**: Finds the position of a child cell relative to its parent cell at a specified resolution.
-- **`child_pos_to_cell(parent: H3CellInput, res_child: int, child_pos: int) -> long`**: Converts a child position back to an H3 cell.
-- **`compact_cells(cells: List[H3CellInput]) -> List[long]`**: Compacts a list of H3 cells.
-- **`uncompact_cells(cells: List[H3CellInput], res: int) -> List[long]`**: Uncompacts a list of H3 cells to a specified resolution.
-- **`h3shape_to_cells(shape: H3Shape, res: int) -> List[long]`**: Converts a shape to H3 cells at a specified resolution.
-- **`cells_to_h3shape(cells: List[H3CellInput]) -> string`**: Converts a list of H3 cells to a GeoJSON shape.
-- **`is_pentagon(cell: H3CellInput) -> bool`**: Checks if an H3 cell is a pentagon. _Has a pyspark native equivalent_
-- **`get_base_cell_number(cell: H3CellInput) -> int`**: Retrieves the base cell number of an H3 cell. _Has a pyspark native equivalent_
-- **`are_neighbor_cells(cell1: H3CellInput, cell2: H3CellInput) -> bool`**: Checks if two H3 cells are neighbors.
-- **`grid_path_cells(start: H3CellInput, end: H3CellInput) -> List[long]`**: Finds the grid path between two H3 cells.
-- **`is_res_class_III(cell: H3CellInput) -> bool`**: Checks if an H3 cell is of class III resolution. _Has a pyspark native equivalent_
-- **`get_pentagons(res: int) -> List[long]`**: Returns all pentagon cells at a given resolution. _Has a pyspark native equivalent_
-- **`get_res0_cells() -> List[long]`**: Returns all resolution 0 base cells. _Has a pyspark native equivalent_
-- **`cell_to_center_child(cell: H3CellInput, res: int) -> long`**: Finds the center child cell of a given cell at a specified resolution. _Has a pyspark native equivalent_
-- **`get_icosahedron_faces(cell: H3CellInput) -> List[int]`**: Retrieves icosahedron face indexes for a given H3 cell.
-- **`cell_to_local_ij(cell: H3CellInput) -> List[int]`**: Converts an H3 cell to local IJ coordinates.
-- **`local_ij_to_cell(origin: H3CellInput, i: int, j: int) -> long`**: Converts local IJ coordinates back to an H3 cell.
-- **`cell_area(cell: H3CellInput, unit: Union[AreaUnit, str] = AreaUnit.KM2) -> float`**: Computes the area of an H3 cell in a specified unit.
+### Natively implemented functions
 
-### Convenience functions
+These follow the same rules as h3-py and return the same values for valid cells and in-range resolutions, but do far less validation. Invalid cells or resolutions (e.g. a parent resolution finer than the cell's) produce null or meaningless values instead of raising. Use `h3spark.udf.<fn>` if you need h3-py's errors.
 
-We provide some functions that wrap other h3 functions for streamlining commonly used operations. You can import them from `h3spark.convenience`
+- **`str_to_int(h3_str: string) -> long`**: Converts a hex string cell (any case) to its integer representation.
+- **`int_to_str(h3_int: long) -> string`**: Converts a cell to its lowercase hex string representation.
+- **`get_resolution(cell: long) -> int`**: Resolution of a cell.
+- **`get_base_cell_number(cell: long) -> int`**: Base cell number of a cell.
+- **`is_pentagon(cell: long) -> bool`**: Whether a cell is a pentagon.
+- **`is_res_class_III(cell: long) -> bool`**: Whether a cell has a class III resolution.
+- **`cell_to_parent(cell: long, res: int) -> long`**: Parent of a cell at a resolution.
+- **`cell_to_center_child(cell: long, res: int) -> long`**: Center child of a cell at a resolution.
+- **`cell_to_children_size(cell: long, res: int, validate_resolution: bool = False) -> long`**: Number of children of a cell at a resolution. Null if `res` is coarser than the cell's resolution, or an error if `validate_resolution` is True.
+- **`min_child(cell: long, resolution: int) -> long`**: Child with the lowest index at a resolution (the center child).
+- **`max_child(cell: long, resolution: int) -> long`**: Child with the highest index at a resolution.
+- **`is_childof(child: long, parent: long) -> bool`**: Whether `child` is `parent` or one of its descendants.
+- **`has_child_at_resolution(cell: long, child_resolution: int) -> bool`**: Whether a cell has children at a resolution.
+- **`get_num_cells(res: int) -> long`**: Number of cells at a resolution.
+- **`average_hexagon_area(res: int, unit: AreaUnit | str = AreaUnit.KM2) -> double`**: Average hexagon area at a resolution. h3 only supports `km^2` and `m^2`.
+- **`average_hexagon_edge_length(res: int, unit: LengthUnit | str = LengthUnit.KM) -> double`**: Average hexagon edge length at a resolution. h3 only supports `km` and `m`.
+- **`get_pentagons(res: int) -> array<long>`**: All pentagons at a resolution.
+- **`get_res0_cells() -> array<long>`**: All resolution 0 cells.
 
-- **`min_child(cell: H3CellInput, resolution: int) -> long`**: Finds the child of minimum value of the input H3 cell at the specified resolution. Prefer `h3spark.native.minchild` for long inputs
-- **`max_child(cell: H3CellInput, resolution: int) -> long`**: Finds the child of maximum value of the input H3 cell at the specified resolution. Prefer `h3spark.native.maxchild` for long inputs
-- **`h3shape_to_cells_compacted(shape: H3Shape, res: int) -> List[long]`**: Converts a shape to H3 cells at a specified resolution and compacts the result. Avoids the need to call `compact_cells` after `h3shape_to_cells` (which requires an additional pass over the data)
+### Python UDF functions
+
+- **`latlng_to_cell(lat: double, lng: double, res: int) -> long`**: Cell containing a point.
+- **`cell_to_latlng(cell: H3CellInput) -> COORDINATE_TYPE`**: Center of a cell.
+- **`cell_to_boundary(cell: H3CellInput) -> BOUNDARY_TYPE`**: Boundary of a cell.
+- **`grid_distance(cell1: H3CellInput, cell2: H3CellInput) -> int`**: Grid distance between two cells.
+- **`grid_disk(cell: H3CellInput, k: int) -> array<long>`**: Cells within `k` steps of a cell.
+- **`grid_ring(cell: H3CellInput, k: int) -> array<long>`**: Cells exactly `k` steps from a cell.
+- **`grid_path_cells(start: H3CellInput, end: H3CellInput) -> array<long>`**: Grid path between two cells.
+- **`are_neighbor_cells(cell1: H3CellInput, cell2: H3CellInput) -> bool`**: Whether two cells are neighbors.
+- **`cell_to_children(cell: H3CellInput, res: int) -> array<long>`**: Children of a cell at a resolution.
+- **`cell_to_child_pos(child: H3CellInput, res_parent: int) -> long`**: Position of a cell among the children of its parent at `res_parent`.
+- **`child_pos_to_cell(parent: H3CellInput, res_child: int, child_pos: long) -> long`**: Child of a cell at a position.
+- **`compact_cells(cells: array<H3CellInput>) -> array<long>`**: Compacts a set of cells.
+- **`uncompact_cells(cells: array<H3CellInput>, res: int) -> array<long>`**: Uncompacts a set of cells to a resolution.
+- **`h3shape_to_cells(shape: H3Shape, res: int) -> array<long>`**: Cells covering a shape. `H3Shape` is a GeoJSON string, an array of `(lat, lng)`, or an array of arrays of `(lat, lng)`.
+- **`h3shape_to_cells_compacted(shape: H3Shape, res: int) -> array<long>`**: `h3shape_to_cells` followed by `compact_cells`, without an additional pass over the data.
+- **`cells_to_h3shape(cells: array<H3CellInput>) -> string`**: GeoJSON shape of a set of cells.
+- **`get_icosahedron_faces(cell: H3CellInput) -> array<int>`**: Icosahedron faces intersected by a cell.
+- **`cell_to_local_ij(origin: H3CellInput, cell: H3CellInput) -> array<int>`**: Local IJ coordinates of a cell relative to an origin.
+- **`local_ij_to_cell(origin: H3CellInput, i: int, j: int) -> long`**: Cell at local IJ coordinates relative to an origin.
+- **`cell_area(cell: H3CellInput, unit: AreaUnit | str = AreaUnit.KM2) -> double`**: Area of a cell.
+
+`min_child`, `max_child` and `h3shape_to_cells_compacted` can also be imported from `h3spark.convenience`.
+
+### Working with hex string cells (`h3spark.hex`)
+
+If your data stores cells as hex strings (e.g. `"8928308280fffff"`), `h3spark.hex` mirrors the API above but takes cells as strings and returns cells as lowercase strings. Arrays of cells become `array<string>`. Other arguments and non-cell results (resolutions, booleans, areas, coordinates, counts) are unchanged.
+
+```python
+import h3spark.hex as h3hex
+
+df.select(
+    h3hex.cell_to_parent("cell_str", 5),  # string
+    h3hex.grid_disk("cell_str", 1),       # array<string>
+    h3hex.get_resolution("cell_str"),     # int
+)
+```
+
+Cells are converted with the native `str_to_int` / `int_to_str`, so natively implemented functions stay entirely in the JVM (no Python UDF). The conversions do no more validation than the native functions. If you chain several operations, it's cheaper to convert once with `str_to_int` and work with long cells.
+
+## Breaking changes in 0.3.0
+
+- Coordinates, areas and lengths are `DoubleType` instead of `FloatType`, which lost ~0.4m of precision. This affects `COORDINATE_TYPE`, `BOUNDARY_TYPE`, `cell_area`, `average_hexagon_area` and `average_hexagon_edge_length`.
+- Resolutions and base cell numbers are always `IntegerType`. Previously `get_resolution` returned `short` from `h3spark` and `long` from `h3spark.native`, and `get_base_cell` returned `long`. `cell_to_children_size` and `cell_to_child_pos` now return `long` (child positions overflowed `int`).
+- These functions are now native: `str_to_int`, `int_to_str`, `get_resolution`, `get_base_cell_number`, `is_pentagon`, `is_res_class_III`, `cell_to_parent`, `cell_to_center_child`, `cell_to_children_size`, `get_num_cells`, `average_hexagon_area`, `average_hexagon_edge_length`, `get_pentagons`, `get_res0_cells`, and `h3spark.convenience.min_child` / `max_child`. They require long cells (hex strings become null) and no longer raise on invalid input. **If you store cells as hex strings, use `h3spark.hex`.** For the previous h3-py backed behaviour, use `h3spark.udf`.
+- `unit` arguments must be plain Python values, not Columns (e.g. `average_hexagon_area(7, "km^2")` instead of `F.lit("km^2")`).
+- Public functions are plain Python functions returning Columns, not `UserDefinedFunction` objects, so they can't be passed to `spark.udf.register`.
+- `h3spark.native` functions use the same parameter names as `h3spark` (e.g. `cell_to_parent(cell, res)` instead of `(col, parent_resolution)`). `convenience.min_child` / `max_child` take `cell` instead of `cell_id`.
+- `cell_to_local_ij` takes `(origin, cell)` like h3-py (it previously always failed), and `get_icosahedron_faces` now works (it failed with h3 v4).
+- Removed the deprecated `h3spark.native.cell_to_parent_fixed`, the unused `h3spark.models.Coordinates`, and the `h3spark.native` constants (`BASE_CELL_DATA`, ...).
 
 ## License
 
@@ -104,15 +133,26 @@ This library is released under the MIT License. See the [LICENSE](LICENSE) file 
 
 Contributions are welcome! Please submit a pull request or open an issue to contribute to the project.
 
+Every function is defined once in `src/h3spark/__init__.py` with the `@h3fn` decorator. The decorator declares the function's h3-py reference, its Spark return type, which parameters are cells (or arrays of cells, shapes, or plan-time values), and whether it returns cells:
+
+```python
+@h3fn(h3=h3.grid_disk, return_type=T.ArrayType(T.LongType()), cells=("cell",), returns="cells")
+def grid_disk(cell: ColumnOrName, k: IntOrColumn) -> Column: ...
+```
+
+A body of `...` gives a Python UDF built from `h3=`. A real body is the native implementation and becomes the default; cell arguments arrive as long Columns and other arguments as Columns. `h3spark.native`, `h3spark.udf`, `h3spark.hex` and the tests in `test/test_registry.py` are all generated from these definitions. Adding a function, or reimplementing one natively, needs nothing else, unless it introduces a new parameter name, which needs an argument generator in the test.
+
+```sh
+uv sync
+uv run pytest
+uv run black --check . && uv run flake8 .
+uv run python bench/bench.py --rows 1000000  # UDF vs native vs hex timings
+```
+
+Releases are published to PyPI by CI when a pull request labelled `release:patch`, `release:minor` or `release:major` is merged.
+
 ## Acknowledgments
 
 This library is built on top of the H3 geospatial indexing library and PySpark. Special thanks to the developers of these libraries for their contributions to the open-source community.
 
 For more information, check the [official H3 documentation](https://h3geo.org/docs/) and [PySpark documentation](https://spark.apache.org/docs/latest/api/python/index.html).
-
-## Building + Deploying
-
-```sh
-python -m build
-python -m twine upload --verbose --repository pypi dist/*
-```
