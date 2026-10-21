@@ -18,8 +18,10 @@ classifiers = [
 ]
 dependencies = [
     "h3>=4.1",
-    "pyspark[sql]>=3.5,<4.0",
+    "pyspark[sql]>=3.5,<5",
+    # pyarrow 26 needs numpy 2, which pyspark 3.5 doesn't support
     "pyarrow<26",
+    # pyspark 3.5 imports distutils, removed in Python 3.12
     "setuptools; python_version >= '3.12'",
 ]
 

@@ -8,7 +8,7 @@ Where possible, functions are implemented natively with Spark SQL expressions. T
 
 ## Installation
 
-Requires PySpark 3.5+. UDFs returning scalars or structs run with Arrow optimization enabled (`useArrow=True`), so `pandas` and `pyarrow` are installed via `pyspark[sql]`.
+Requires PySpark 3.5 or 4.x, classic or [Spark Connect](https://spark.apache.org/docs/latest/spark-connect-overview.html). UDFs returning scalars or structs run with Arrow optimization enabled (`useArrow=True`), so `pandas` and `pyarrow` are installed via `pyspark[sql]`.
 
 You can install `h3spark` using either pip or conda.
 
@@ -46,15 +46,17 @@ Arguments:
 
 - Column arguments accept a `Column` or a column name (`str`). Other arguments, such as `res` or `k`, also accept plain Python values (`res=9`, no `F.lit` needed).
 - `unit` arguments (`AreaUnit`/`LengthUnit` or their string values) are plain Python values resolved when the plan is built, not columns.
-- Cells are 64-bit integers (`LongType`). Native functions accept integral cell columns (`bigint`, `int`, ...) and raise an error for any other type, such as hex strings, even if every value is null. Convert hex strings with `str_to_int` or use `h3spark.hex`. Python UDFs still accept either long or hex string cells (`H3CellInput = Union[str, int]`).
+- Cells are 64-bit integers (`LongType`). Native functions accept integral cell columns (`bigint`, `int`, ...). Any other type, such as hex strings, fails when Spark analyses the plan (e.g. on `df.select`), before any data is processed, with an error pointing to `h3spark.hex`. Convert hex strings with `str_to_int` or use `h3spark.hex`. Python UDFs still accept either long or hex string cells (`H3CellInput = Union[str, int]`).
+- Results are named like a function call, e.g. `cell_to_parent(cell, 5)`, whichever implementation runs.
 
 Types: resolutions and base cell numbers are `int`, cells and counts are `long` (`bigint`), and areas, lengths and coordinates are `double`. `COORDINATE_TYPE` is `struct<lat: double, lon: double>` and `BOUNDARY_TYPE` is an array of it.
 
 ### Natively implemented functions
 
-These follow the same rules as h3-py and return the same values for valid cells and in-range resolutions, but do far less validation. Invalid cells or resolutions (e.g. a parent resolution finer than the cell's) produce null or meaningless values instead of raising. Use `h3spark.udf.<fn>` if you need h3-py's errors.
+These follow the same rules as h3-py and return the same values for valid cells and in-range resolutions, but do far less validation. Invalid cells or resolutions (e.g. a parent resolution finer than the cell's) produce null or meaningless values instead of raising. Filter untrusted data with `is_valid_cell` first, or use `h3spark.udf.<fn>` if you need h3-py's errors.
 
-- **`str_to_int(h3_str: string) -> long`**: Converts a hex string cell (any case) to its integer representation.
+- **`is_valid_cell(cell: long) -> bool`**: Whether a cell is valid, with the same checks as h3-py.
+- **`str_to_int(h3_str: string) -> long`**: Converts a hex string cell (any case) to its integer representation. Strings that aren't hex give meaningless values or null.
 - **`int_to_str(h3_int: long) -> string`**: Converts a cell to its lowercase hex string representation.
 - **`get_resolution(cell: long) -> int`**: Resolution of a cell.
 - **`get_base_cell_number(cell: long) -> int`**: Base cell number of a cell.
@@ -67,6 +69,8 @@ These follow the same rules as h3-py and return the same values for valid cells 
 - **`max_child(cell: long, resolution: int) -> long`**: Child with the highest index at a resolution.
 - **`is_childof(child: long, parent: long) -> bool`**: Whether `child` is `parent` or one of its descendants.
 - **`has_child_at_resolution(cell: long, child_resolution: int) -> bool`**: Whether a cell has children at a resolution.
+- **`cell_to_child_pos(child: long, res_parent: int) -> long`**: Position of a cell among the children of its parent at `res_parent`.
+- **`child_pos_to_cell(parent: long, res_child: int, child_pos: long) -> long`**: Child of a cell at a position. Null if the position or resolution is out of range.
 - **`get_num_cells(res: int) -> long`**: Number of cells at a resolution.
 - **`average_hexagon_area(res: int, unit: AreaUnit | str = AreaUnit.KM2) -> double`**: Average hexagon area at a resolution. h3 only supports `km^2` and `m^2`.
 - **`average_hexagon_edge_length(res: int, unit: LengthUnit | str = LengthUnit.KM) -> double`**: Average hexagon edge length at a resolution. h3 only supports `km` and `m`.
@@ -84,8 +88,6 @@ These follow the same rules as h3-py and return the same values for valid cells 
 - **`grid_path_cells(start: H3CellInput, end: H3CellInput) -> array<long>`**: Grid path between two cells.
 - **`are_neighbor_cells(cell1: H3CellInput, cell2: H3CellInput) -> bool`**: Whether two cells are neighbors.
 - **`cell_to_children(cell: H3CellInput, res: int) -> array<long>`**: Children of a cell at a resolution.
-- **`cell_to_child_pos(child: H3CellInput, res_parent: int) -> long`**: Position of a cell among the children of its parent at `res_parent`.
-- **`child_pos_to_cell(parent: H3CellInput, res_child: int, child_pos: long) -> long`**: Child of a cell at a position.
 - **`compact_cells(cells: array<H3CellInput>) -> array<long>`**: Compacts a set of cells.
 - **`uncompact_cells(cells: array<H3CellInput>, res: int) -> array<long>`**: Uncompacts a set of cells to a resolution.
 - **`h3shape_to_cells(shape: H3Shape, res: int) -> array<long>`**: Cells covering a shape. `H3Shape` is a GeoJSON string, an array of `(lat, lng)`, or an array of arrays of `(lat, lng)`.
@@ -113,6 +115,14 @@ df.select(
 ```
 
 Cells are converted with the native `str_to_int` / `int_to_str`, so natively implemented functions stay entirely in the JVM (no Python UDF). The conversions do no more validation than the native functions. If you chain several operations, it's cheaper to convert once with `str_to_int` and work with long cells.
+
+## Changes in 0.4.0
+
+- Supports PySpark 4 and Spark Connect. With pyspark 3.5, 0.3.0 rejected Spark Connect `Column` objects.
+- New native `is_valid_cell`. `cell_to_child_pos` and `child_pos_to_cell` are now native (about 2-5x faster); `h3spark.udf` has the h3-py versions.
+- Passing a non-integral cell column to a native function fails when the plan is analysed rather than when the first row is processed, so it also fails for empty DataFrames.
+- Results are named like a function call (e.g. `grid_disk(cell, 1)`) instead of `row(cell, 1)` for UDFs or the whole expression for native functions.
+- Out of range resolutions give null in native functions also when ANSI mode is enabled (the default in Spark 4), instead of raising an array index error.
 
 ## Breaking changes in 0.3.0
 

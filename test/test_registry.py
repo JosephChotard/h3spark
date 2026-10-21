@@ -5,6 +5,7 @@ res 0 cell:
 - the default, UDF (and so native, when there is one) implementations equal the h3-py reference
 - h3spark.hex.<name> equals the long version with cells converted to hex strings, with string output types
 - result types match the declared return type, and hex versions of native functions run without Python UDFs
+- every version names its result like a UDF call, e.g. cell_to_parent(cell, res)
 
 Adding a function only needs its @h3fn definition (and an argument generator below if it uses a new parameter name).
 """
@@ -22,6 +23,12 @@ from pyspark.sql import functions as F
 import h3spark.hex as h3hex
 from h3spark import REGISTRY
 
+from .conftest import REMOTE, physical_plan
+
+# Spark Connect's Python client rejects expressions nested more than 100 protobuf messages deep. Leave room for
+# users to nest h3spark functions in their own expressions.
+MAX_CONNECT_DEPTH = 60
+
 MAX_RES = 15
 N_RANDOM_CELLS = 3000
 
@@ -32,11 +39,23 @@ def random_cell(rng: random.Random) -> int:
     return int(h3.latlng_to_cell(lat, lng, rng.randint(0, MAX_RES)))
 
 
+def random_descendant(rng: random.Random, cell: int) -> int:
+    res = rng.randint(h3.get_resolution(cell), MAX_RES)
+    return int(
+        h3.child_pos_to_cell(
+            cell, res, rng.randrange(h3.cell_to_children_size(cell, res))
+        )
+    )
+
+
 def build_cells() -> list[int]:
     rng = random.Random(42)
+    pentagons = [int(p) for r in range(MAX_RES + 1) for p in h3.get_pentagons(r)]
     return (
         [random_cell(rng) for _ in range(N_RANDOM_CELLS)]
-        + [int(p) for r in range(MAX_RES + 1) for p in h3.get_pentagons(r)]
+        + pentagons
+        # Pentagons' descendants have their own rules (no digit 1 subsequence)
+        + [random_descendant(rng, p) for p in pentagons]
         + [int(c) for c in h3.get_res0_cells()]
     )
 
@@ -165,14 +184,20 @@ def test_function(spark, name, static):
         ),
     )
 
+    implementations = [entry.default, entry.udf] + (
+        [getattr(h3hex, name)] if entry.hex else []
+    )
+    for implementation in implementations:
+        unnamed = df.select(implementation(*map(F.col, params), **static))
+        assert unnamed.columns == [f"{name}({', '.join(params)})"]
+
     types = {f.name: f.dataType.simpleString() for f in result.schema.fields}
     assert types["default"] == types["udf"] == entry.return_type.simpleString()
     if entry.hex:
         expected_hex_type = {"cell": "string", "cells": "array<string>"}
         assert types["hex"] == expected_hex_type.get(entry.returns, types["default"])
         if entry.native:
-            plan = df.select(getattr(h3hex, name)(*hex_cols, **static))
-            plan = plan._jdf.queryExecution().executedPlan().toString()
+            plan = physical_plan(df.select(getattr(h3hex, name)(*hex_cols, **static)))
             assert "Python" not in plan
 
     for row in result.collect():
@@ -183,3 +208,26 @@ def test_function(spark, name, static):
             if entry.returns:
                 long_value = to_hex(long_value)
             assert row["hex"] == long_value
+
+
+def proto_depth(message) -> int:
+    children = [
+        child
+        for field, value in message.ListFields()
+        if field.message_type and not field.message_type.GetOptions().map_entry
+        for child in (value if field.is_repeated else [value])
+    ]
+    return 1 + max(map(proto_depth, children), default=0)
+
+
+@pytest.mark.skipif(not REMOTE, reason="Spark Connect only")
+@pytest.mark.parametrize("name", REGISTRY)
+def test_connect_expression_depth(spark, name):
+    entry = REGISTRY[name]
+    params = [p for p in entry.signature.parameters if p not in entry.static]
+    implementations = [entry.default, entry.udf] + (
+        [getattr(h3hex, name)] if entry.hex else []
+    )
+    for implementation in implementations:
+        expression = implementation(*map(F.col, params))._expr.to_plan(spark.client)
+        assert proto_depth(expression) <= MAX_CONNECT_DEPTH

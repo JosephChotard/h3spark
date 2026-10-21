@@ -14,6 +14,8 @@ The decorated name is bound to the default implementation: native if there is on
 import functools
 import inspect
 import json
+import operator
+import re
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
@@ -24,7 +26,16 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.column import Column
 
+from . import _bits as B
 from .utils import to_h3_cell, to_h3_shape
+
+try:
+    # Spark Connect columns only subclass Column from Spark 4
+    from pyspark.sql.connect.column import Column as ConnectColumn
+
+    COLUMN_TYPES: tuple[type, ...] = (Column, ConnectColumn)
+except ImportError:  # Spark Connect dependencies aren't installed
+    COLUMN_TYPES = (Column,)
 
 ColumnOrName: TypeAlias = Column | str
 IntOrColumn: TypeAlias = int | ColumnOrName
@@ -39,6 +50,9 @@ class H3Function:
     signature: inspect.Signature
     udf: Callable[..., Column]
     native: Callable[..., Column] | None
+    # The native implementation without the cell type checks and result name, for callers that already have long
+    # cell columns (h3spark.hex). Shallower, see _bits.balanced.
+    native_unchecked: Callable[..., Column] | None
     # Python version taking the same arguments as the Spark functions (cells as ints, values as Spark returns them)
     reference: Callable[..., Any]
     return_type: T.DataType
@@ -58,7 +72,7 @@ REGISTRY: dict[str, H3Function] = {}
 
 
 def to_col(col: ColumnOrName) -> Column:
-    if isinstance(col, Column):
+    if isinstance(col, COLUMN_TYPES):
         return col
     if isinstance(col, str):
         return F.col(col)
@@ -67,38 +81,55 @@ def to_col(col: ColumnOrName) -> Column:
 
 def column_arg(value: Any) -> Column:
     """Columns pass through, strings are column names, anything else is a literal"""
-    if isinstance(value, (Column, str)):
+    if isinstance(value, (*COLUMN_TYPES, str)):
         return to_col(value)
     return F.lit(value)
 
 
-_INTEGRAL_TYPES = ["bigint", "int", "smallint", "tinyint"]
-
-
-def long_cells(col: Column, name: str, has_hex: bool, array: bool = False) -> Column:
+def cell_check(col: Column, name: str, has_hex: bool, array: bool = False) -> Column:
     """
-    Casts an integral cell (or array of cells) column to long, raising for any other type instead of silently
-    producing nulls. typeof is constant-folded, so for integral columns this is just the cast.
+    Always false, but makes Spark fail when it analyses the plan (e.g. on df.select) unless col is an integral cell
+    column (or array of them), instead of producing nulls or failing once rows are processed
     """
-    allowed = [f"array<{t}>" for t in _INTEGRAL_TYPES] if array else _INTEGRAL_TYPES
     expected = "array<bigint>" if array else "bigint"
     hint = f"h3spark.hex.{name} or " if has_hex else ""
-    col_type = F.typeof(col)
-    message = F.concat(
-        F.lit(f"{name} expects {expected} cells, got "),
-        col_type,
-        F.lit(f". For hex string cells use {hint}h3spark.str_to_int"),
-    )
-    return F.when(~col_type.isin(allowed), F.raise_error(message)).otherwise(
-        col.cast(expected)
-    )
+    message = f"{name} expects {expected} cells (for hex string cells use {hint}h3spark.str_to_int)"
+    # bitwise_not only accepts integral types. Naming a struct field after the message puts it in Spark's error.
+    probe = F.struct(col.alias(message))[message]
+    if array:
+        probe = probe[0]
+    return F.lit(False) & F.bitwise_not(probe).isNull()
+
+
+def with_checks(result: Column, checks: list[Column]) -> Column:
+    """
+    Puts checks in a branch that's never taken, which the optimizer removes. Beside the result rather than around
+    each argument, so they don't nest the expression deeper: Spark Connect rejects deeply nested expressions.
+    """
+    if not checks:
+        return result
+    return F.when(B.balanced(operator.or_, checks), F.lit(None)).otherwise(result)
+
+
+def _arg_name(value: Any) -> str:
+    """How Spark shows an argument in a column name, e.g. cell for F.col("cell")"""
+    if not isinstance(value, COLUMN_TYPES):
+        return str(value)
+    text = re.sub(r"^Column<'(.*)'>$", r"\1", str(value), flags=re.S)
+    alias = re.search(r" AS (?:`([^`]*)`|(\w+))$", text)
+    return (alias.group(1) or alias.group(2)) if alias else text
+
+
+def named(result: Column, name: str, args: list) -> Column:
+    """Names a result like a UDF call, e.g. cell_to_parent(cell, 5), instead of after the whole expression"""
+    return result.alias(f"{name}({', '.join(map(_arg_name, args))})")
 
 
 def unit_value(unit_type: type[E]) -> Callable[[E | str], str]:
     """Static converter accepting an enum member or its value"""
 
     def convert(unit: E | str) -> str:
-        if isinstance(unit, Column):
+        if isinstance(unit, COLUMN_TYPES):
             raise TypeError(
                 "unit must be a plain Python value (e.g. 'km^2' or AreaUnit.KM2), not a Column"
             )
@@ -209,6 +240,8 @@ def h3fn(
 
             # Spark only enables Arrow for functions with named arguments
             row.__signature__ = row_signature
+            # Spark names UDF results after the function
+            row.__name__ = row.__qualname__ = func.__name__
             # Arrow is slower than pickling for arrays
             return F.udf(row, return_type, useArrow=not array)
 
@@ -229,13 +262,23 @@ def h3fn(
         @functools.wraps(func)
         def native(*args, **kwargs) -> Column:
             bound = bind(args, kwargs)
+            values = [bound.arguments[p] for p in column_params]
+            checks = []
             for p in column_params:
                 value = bound.arguments[p]
                 if p in cells or p in cell_lists:
-                    value = long_cells(
-                        to_col(value), func.__name__, hex, p in cell_lists
-                    )
+                    array = p in cell_lists
+                    value = to_col(value)
+                    checks.append(cell_check(value, func.__name__, hex, array))
+                    value = value.cast("array<bigint>" if array else "bigint")
                 bound.arguments[p] = column_arg(value)
+            result = with_checks(func(*bound.args, **bound.kwargs), checks)
+            return named(result, func.__name__, values)
+
+        def native_unchecked(*args, **kwargs) -> Column:
+            bound = bind(args, kwargs)
+            for p in column_params:
+                bound.arguments[p] = column_arg(bound.arguments[p])
             return func(*bound.args, **bound.kwargs)
 
         if func.__name__ in REGISTRY:
@@ -245,6 +288,7 @@ def h3fn(
             signature=signature,
             udf=udf,
             native=None if _is_stub(func) else native,
+            native_unchecked=None if _is_stub(func) else native_unchecked,
             reference=reference,
             return_type=return_type,
             cells=cells,

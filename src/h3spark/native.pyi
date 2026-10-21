@@ -12,8 +12,10 @@ __all__ = [
     "average_hexagon_area",
     "average_hexagon_edge_length",
     "cell_to_center_child",
+    "cell_to_child_pos",
     "cell_to_children_size",
     "cell_to_parent",
+    "child_pos_to_cell",
     "get_base_cell",
     "get_base_cell_number",
     "get_num_cells",
@@ -25,6 +27,7 @@ __all__ = [
     "is_childof",
     "is_pentagon",
     "is_res_class_III",
+    "is_valid_cell",
     "max_child",
     "maxchild",
     "min_child",
@@ -60,6 +63,14 @@ def cell_to_center_child(cell: ColumnOrName, res: int | ColumnOrName) -> Column:
     Returns: Column[bigint]
     """
 
+def cell_to_child_pos(child: ColumnOrName, res_parent: int | ColumnOrName) -> Column:
+    """Native Spark implementation.
+
+    Native: null if res_parent is above the child's resolution, doesn't validate the child
+
+    Returns: Column[bigint]
+    """
+
 def cell_to_children_size(
     cell: ColumnOrName, res: int | ColumnOrName, validate_resolution: bool = False
 ) -> Column:
@@ -75,6 +86,16 @@ def cell_to_parent(cell: ColumnOrName, res: int | ColumnOrName) -> Column:
     """Native Spark implementation.
 
     Native: doesn't validate that res is at most the cell's resolution
+
+    Returns: Column[bigint]
+    """
+
+def child_pos_to_cell(
+    parent: ColumnOrName, res_child: int | ColumnOrName, child_pos: int | ColumnOrName
+) -> Column:
+    """Native Spark implementation.
+
+    Native: null if child_pos or res_child is out of range
 
     Returns: Column[bigint]
     """
@@ -151,6 +172,14 @@ def is_res_class_III(cell: ColumnOrName) -> Column:
     Returns: Column[boolean]
     """
 
+def is_valid_cell(cell: ColumnOrName) -> Column:
+    """Native Spark implementation.
+
+    Same checks as h3-py. Native: null for null cells
+
+    Returns: Column[boolean]
+    """
+
 def max_child(cell: ColumnOrName, resolution: int | ColumnOrName) -> Column:
     """Native Spark implementation.
 
@@ -186,7 +215,7 @@ def minchild(cell: ColumnOrName, resolution: int | ColumnOrName) -> Column:
 def str_to_int(h3_str: ColumnOrName) -> Column:
     """Native Spark implementation.
 
-    Parses a hex string cell. Performs no validation
+    Parses a hex string cell. Performs no validation: strings that aren't hex give meaningless values or null
 
     Returns: Column[bigint]
     """
