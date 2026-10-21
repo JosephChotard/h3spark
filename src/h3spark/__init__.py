@@ -35,6 +35,11 @@ def _h3_is_childof(child: int, parent: int) -> bool:
     return res <= h3.get_resolution(child) and h3.cell_to_parent(child, res) == parent
 
 
+def _h3_is_valid_cell(cell: int | None) -> bool | None:
+    # h3 raises for negative ints, which a long column can hold
+    return None if cell is None else cell >= 0 and bool(h3.is_valid_cell(cell))
+
+
 def _h3_max_child(cell: int, res: int) -> int:
     return h3.child_pos_to_cell(cell, res, h3.cell_to_children_size(cell, res) - 1)
 
@@ -48,14 +53,22 @@ def _h3shape_to_cells_compacted(shape: h3.H3Shape, res: int):
 
 @h3fn(h3=h3.str_to_int, return_type=_LONG, returns="cell", hex=False)
 def str_to_int(h3_str: ColumnOrName) -> Column:
-    """Parses a hex string cell. Performs no validation"""
-    return F.conv(h3_str, 16, 10).cast("long")
+    """Parses a hex string cell. Performs no validation: strings that aren't hex give meaningless values or null"""
+    # Signed so the conversion can't overflow a long, which raises in ANSI mode
+    # (the length check is on the input so Spark can still reuse the conversion when the result is used repeatedly)
+    return F.conv(F.when(F.length(h3_str) <= 16, h3_str), 16, -10).cast("long")
 
 
 @h3fn(h3=h3.int_to_str, return_type=T.StringType(), cells=("h3_int",), hex=False)
 def int_to_str(h3_int: ColumnOrName) -> Column:
     """Formats a cell as a lowercase hex string. Performs no validation"""
     return F.lower(F.hex(h3_int))
+
+
+@h3fn(h3=_h3_is_valid_cell, return_type=_BOOL, cells=("cell",))
+def is_valid_cell(cell: ColumnOrName) -> Column:
+    """Same checks as h3-py. Native: null for null cells"""
+    return B.is_valid_cell(cell)
 
 
 @h3fn(h3=h3.get_resolution, return_type=_INT, cells=("cell",))
@@ -81,7 +94,7 @@ def is_res_class_III(cell: ColumnOrName) -> Column:
 @h3fn(h3=h3.cell_to_parent, return_type=_LONG, cells=("cell",), returns="cell")
 def cell_to_parent(cell: ColumnOrName, res: IntOrColumn) -> Column:
     """Native: doesn't validate that res is at most the cell's resolution"""
-    return B.set_resolution(cell.bitwiseOR(B.digits_after_res(res)), res)
+    return B.parent(cell, res)
 
 
 @h3fn(h3=h3.cell_to_center_child, return_type=_LONG, cells=("cell",), returns="cell")
@@ -119,9 +132,7 @@ def cell_to_children_size(
     is enabled)
     """
     n = res - B.resolution(cell)
-    size = F.when(B.is_pentagon(cell), B.lookup(B.PENTAGON_CHILDREN_SIZE, n)).otherwise(
-        B.lookup(B.HEXAGON_CHILDREN_SIZE, n)
-    )
+    size = B.children_size(B.is_pentagon(cell), n)
     if validate_resolution:
         message = "Child resolution must be greater than or equal to parent resolution"
         size = F.when(F.assert_true(n >= 0, message).isNull(), size)
@@ -146,6 +157,20 @@ def has_child_at_resolution(
     cell: ColumnOrName, child_resolution: IntOrColumn
 ) -> Column:
     return (child_resolution > B.resolution(cell)) & (child_resolution <= B.MAX_H3_RES)
+
+
+@h3fn(h3=h3.cell_to_child_pos, return_type=_LONG, cells=("child",))
+def cell_to_child_pos(child: ColumnOrName, res_parent: IntOrColumn) -> Column:
+    """Native: null if res_parent is above the child's resolution, doesn't validate the child"""
+    return B.child_pos(child, res_parent)
+
+
+@h3fn(h3=h3.child_pos_to_cell, return_type=_LONG, cells=("parent",), returns="cell")
+def child_pos_to_cell(
+    parent: ColumnOrName, res_child: IntOrColumn, child_pos: IntOrColumn
+) -> Column:
+    """Native: null if child_pos or res_child is out of range"""
+    return B.child_at_pos(parent, res_child, child_pos)
 
 
 @h3fn(h3=h3.get_num_cells, return_type=_LONG)
@@ -176,12 +201,12 @@ def average_hexagon_edge_length(
 
 @h3fn(h3=h3.get_pentagons, return_type=_CELLS, returns="cells", hex="table")
 def get_pentagons(res: IntOrColumn) -> Column:
-    return B.lookup([h3.get_pentagons(r).tolist() for r in B.RESOLUTIONS], res)
+    return B.lookup([[int(p) for p in h3.get_pentagons(r)] for r in B.RESOLUTIONS], res)
 
 
 @h3fn(h3=h3.get_res0_cells, return_type=_CELLS, returns="cells", hex="table")
 def get_res0_cells() -> Column:
-    return B.literal_array(h3.get_res0_cells().tolist())
+    return B.literal_array([int(c) for c in h3.get_res0_cells()])
 
 
 # Python UDFs
@@ -215,16 +240,6 @@ def grid_ring(cell: ColumnOrName, k: IntOrColumn) -> Column: ...
 
 @h3fn(h3=h3.cell_to_children, return_type=_CELLS, cells=("cell",), returns="cells")
 def cell_to_children(cell: ColumnOrName, res: IntOrColumn) -> Column: ...
-
-
-@h3fn(h3=h3.cell_to_child_pos, return_type=_LONG, cells=("child",))
-def cell_to_child_pos(child: ColumnOrName, res_parent: IntOrColumn) -> Column: ...
-
-
-@h3fn(h3=h3.child_pos_to_cell, return_type=_LONG, cells=("parent",), returns="cell")
-def child_pos_to_cell(
-    parent: ColumnOrName, res_child: IntOrColumn, child_pos: IntOrColumn
-) -> Column: ...
 
 
 @h3fn(h3=h3.compact_cells, return_type=_CELLS, cell_lists=("cells",), returns="cells")

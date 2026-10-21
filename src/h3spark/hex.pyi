@@ -39,6 +39,7 @@ __all__ = [
     "is_childof",
     "is_pentagon",
     "is_res_class_III",
+    "is_valid_cell",
     "latlng_to_cell",
     "local_ij_to_cell",
     "max_child",
@@ -95,6 +96,8 @@ def cell_to_center_child(cell: ColumnOrName, res: int | ColumnOrName) -> Column:
 def cell_to_child_pos(child: ColumnOrName, res_parent: int | ColumnOrName) -> Column:
     """Hex string version of h3spark.cell_to_child_pos: cell arguments are hex string columns.
 
+    Native: null if res_parent is above the child's resolution, doesn't validate the child
+
     Returns: Column[bigint]
     """
 
@@ -147,6 +150,8 @@ def child_pos_to_cell(
     parent: ColumnOrName, res_child: int | ColumnOrName, child_pos: int | ColumnOrName
 ) -> Column:
     """Hex string version of h3spark.child_pos_to_cell: cell arguments are hex string columns.
+
+    Native: null if child_pos or res_child is out of range
 
     Returns: Column[string]
     """
@@ -257,6 +262,14 @@ def is_pentagon(cell: ColumnOrName) -> Column:
 
 def is_res_class_III(cell: ColumnOrName) -> Column:
     """Hex string version of h3spark.is_res_class_III: cell arguments are hex string columns.
+
+    Returns: Column[boolean]
+    """
+
+def is_valid_cell(cell: ColumnOrName) -> Column:
+    """Hex string version of h3spark.is_valid_cell: cell arguments are hex string columns.
+
+    Same checks as h3-py. Native: null for null cells
 
     Returns: Column[boolean]
     """

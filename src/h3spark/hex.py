@@ -19,7 +19,7 @@ import h3.api.numpy_int as h3
 
 from . import REGISTRY, int_to_str, str_to_int
 from . import _bits as B
-from ._registry import H3Function, column_arg, to_col
+from ._registry import H3Function, column_arg, named, to_col
 
 
 def _to_hex(value):
@@ -36,14 +36,17 @@ def _hex_table(entry: H3Function):
     params = list(entry.signature.parameters)
     if not params:
         values = _to_hex(entry.reference())
-        return functools.wraps(entry.default)(lambda: B.literal_array(values))
+        return functools.wraps(entry.default)(
+            lambda: named(B.literal_array(values), entry.name, [])
+        )
     (param,) = params
     table = [_to_hex(entry.reference(r)) for r in B.RESOLUTIONS]
 
     @functools.wraps(entry.default)
     def wrapper(*args, **kwargs) -> Column:
         bound = entry.signature.bind(*args, **kwargs)
-        return B.lookup(table, column_arg(bound.arguments[param]))
+        res = bound.arguments[param]
+        return named(B.lookup(table, column_arg(res)), entry.name, [res])
 
     return wrapper
 
@@ -54,10 +57,12 @@ def _hexify(entry: H3Function):
         return _hex_table(entry)
     if not (entry.cells or entry.cell_lists or entry.returns):
         return func
+    params = [p for p in entry.signature.parameters if p not in entry.static]
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs) -> Column:
         bound = entry.signature.bind(*args, **kwargs)
+        values = [bound.arguments.get(p) for p in params]
         for name in entry.cells:
             if name in bound.arguments:
                 bound.arguments[name] = str_to_int(bound.arguments[name])
@@ -68,10 +73,10 @@ def _hexify(entry: H3Function):
                 )
         result = func(*bound.args, **bound.kwargs)
         if entry.returns == "cell":
-            return int_to_str(result)
-        if entry.returns == "cells":
-            return F.transform(result, int_to_str)
-        return result
+            result = int_to_str(result)
+        elif entry.returns == "cells":
+            result = F.transform(result, int_to_str)
+        return named(result, entry.name, values)
 
     wrapper.__module__ = __name__
     return wrapper

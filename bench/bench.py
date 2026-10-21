@@ -23,6 +23,9 @@ ARGS = {
     "res": RES,
     "resolution": RES,
     "child_resolution": RES + 1,
+    "res_parent": RES - 4,
+    "res_child": RES + 2,
+    "child_pos": 30,
 }
 
 

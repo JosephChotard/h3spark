@@ -41,6 +41,7 @@ __all__ = [
     "is_childof",
     "is_pentagon",
     "is_res_class_III",
+    "is_valid_cell",
     "latlng_to_cell",
     "local_ij_to_cell",
     "max_child",
@@ -252,6 +253,12 @@ def is_pentagon(cell: ColumnOrName) -> Column:
     """
 
 def is_res_class_III(cell: ColumnOrName) -> Column:
+    """Python UDF backed by h3-py. Cells may be long or hex strings.
+
+    Returns: Column[boolean]
+    """
+
+def is_valid_cell(cell: ColumnOrName) -> Column:
     """Python UDF backed by h3-py. Cells may be long or hex strings.
 
     Returns: Column[boolean]

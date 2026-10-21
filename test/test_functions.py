@@ -1,8 +1,11 @@
 """Behaviour the generic registry tests can't express"""
 
 import json
+import random
+import re
 
 import h3.api.numpy_int as h3
+import pyspark
 import pytest
 from pyspark.sql import functions as F
 
@@ -12,6 +15,9 @@ import h3spark.hex as h3hex
 import h3spark.native as h3spark_n
 import h3spark.udf as h3spark_u
 from h3spark import REGISTRY
+from h3spark._registry import long_cells
+
+from .conftest import physical_plan
 
 POLYGON = """{
     "type": "Polygon",
@@ -23,6 +29,7 @@ POLYGON = """{
 RING = json.loads(POLYGON)["coordinates"][0]
 CELL = 582169416674836479
 CELL_STR = "81447ffffffffff"
+MAX_RES = 15
 
 
 @pytest.fixture(scope="module")
@@ -66,12 +73,63 @@ def test_native_accepts_integral_cells(spark, name, cell_type):
 
 
 @pytest.mark.parametrize("name", NATIVE_CALLS)
-@pytest.mark.parametrize("values", [[(CELL_STR,)], [(None,), (None,)]])
-def test_native_rejects_string_cells(spark, name, values):
-    df = spark.createDataFrame(values, "cell string")
-    message = f"{name} expects bigint cells, got string. For hex string cells use h3spark.hex.{name}"
-    with pytest.raises(Exception, match=message):
-        df.select(NATIVE_CALLS[name]("cell")).collect()
+@pytest.mark.parametrize("cell_type", ["string", "double", "boolean"])
+def test_native_rejects_other_cell_types_when_planning(spark, name, cell_type):
+    # No rows: the error comes from analysing the plan, not from processing data
+    df = spark.createDataFrame([], f"cell {cell_type}")
+    hint = f"h3spark.hex.{name} or h3spark.str_to_int"
+    message = f"{name} expects bigint cells (for hex string cells use {hint})"
+    with pytest.raises(Exception, match=re.escape(message)):
+        df.select(NATIVE_CALLS[name]("cell")).schema
+
+
+def test_array_cell_type_check(spark):
+    df = spark.createDataFrame([([1],)], "cells array<int>")
+    assert df.select(long_cells(F.col("cells"), "f", False, True)).first()[0] == [1]
+    df = spark.createDataFrame([], "cells array<string>")
+    message = (
+        "f expects array<bigint> cells (for hex string cells use h3spark.str_to_int)"
+    )
+    with pytest.raises(Exception, match=re.escape(message)):
+        df.select(long_cells(F.col("cells"), "f", False, True)).schema
+
+
+def test_cell_type_check_is_optimized_away(df):
+    plan = physical_plan(df.select(h3spark.cell_to_parent("cell", 0)))
+    assert "expects" not in plan and "CASE" not in plan
+
+
+@pytest.mark.skipif(
+    pyspark.__version__ >= "4",
+    reason="Spark 4 Connect columns subclass Column, the Spark Connect test run covers them",
+)
+def test_connect_columns():
+    # Spark Connect columns don't subclass Column in pyspark 3.5
+    connect = pytest.importorskip("pyspark.sql.connect.functions", exc_type=ImportError)
+    h3spark.cell_to_parent(connect.col("cell"), connect.lit(0))
+
+
+def test_is_valid_cell(spark):
+    rng = random.Random(0)
+    cells = [int(p) for r in range(MAX_RES + 1) for p in h3.get_pentagons(r)]
+    cells += [int(h3.cell_to_center_child(CELL, r)) for r in range(1, MAX_RES + 1)]
+    values = [*cells, -1, 0, *(rng.getrandbits(63) for _ in range(500))]
+    for c in cells:
+        values.append(c ^ (1 << rng.randrange(63)))  # any single bit flip
+        values.append(c ^ (rng.randint(1, 7) << (3 * rng.randrange(15))))  # one digit
+        if h3.is_pentagon(c) and h3.get_resolution(c):
+            # Leading digit 1 is the deleted subsequence of a pentagon
+            values.append(c | 1 << 3 * (MAX_RES - rng.randint(1, h3.get_resolution(c))))
+    expected = [v >= 0 and bool(h3.is_valid_cell(v)) for v in values]
+    assert 0 < sum(expected) < len(values)
+    rows = [(v, h3.int_to_str(v) if v >= 0 else "zz") for v in values]
+    df = spark.createDataFrame(rows, "cell long, cell_str string")
+    result = df.select(
+        h3spark.is_valid_cell("cell"), h3hex.is_valid_cell("cell_str")
+    ).collect()
+    assert [r[0] for r in result] == [r[1] for r in result] == expected
+    junk = spark.createDataFrame([("zz",), ("",), ("f" * 17,)], "cell_str string")
+    assert all(not r[0] for r in junk.select(h3hex.is_valid_cell("cell_str")).collect())
 
 
 def test_validate_resolution(df):
