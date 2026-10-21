@@ -30,16 +30,18 @@ jobs:
       # Used to dispatch release.yml, since tags pushed with GITHUB_TOKEN don't trigger workflows
       actions: write
     steps:
-      - uses: actions/checkout@v4
+      # Default checkout of main: checkout refuses to check out a fork PR's merge commit from pull_request_target.
+      # The merge commit is on main, so it's tagged below without being checked out.
+      - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
       - name: Compute next version
         id: version
         env:
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
-          latest=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*')
+          latest=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "$MERGE_SHA")
           IFS=. read -r major minor patch <<< "${latest#v}"
           case "$LABELS" in
             *'"release:major"'*) major=$((major + 1)); minor=0; patch=0 ;;
@@ -51,8 +53,9 @@ jobs:
       - name: Push tag
         env:
           TAG: ${{ steps.version.outputs.tag }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
-          git tag "$TAG"
+          git tag "$TAG" "$MERGE_SHA"
           git push origin "$TAG"
       - name: Trigger release
         env:

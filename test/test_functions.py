@@ -107,10 +107,19 @@ def test_cell_type_check_is_optimized_away(df):
     pyspark.__version__ >= "4",
     reason="Spark 4 Connect columns subclass Column, the Spark Connect test run covers them",
 )
-def test_connect_columns():
+def test_connect_columns(monkeypatch):
     # Spark Connect columns don't subclass Column in pyspark 3.5
     connect = pytest.importorskip("pyspark.sql.connect.functions", exc_type=ImportError)
-    h3spark.cell_to_parent(connect.col("cell"), connect.lit(0))
+    from pyspark.sql.connect.column import Column as ConnectColumn
+
+    # Set by Spark Connect sessions: pyspark.sql.functions then builds Spark Connect columns
+    monkeypatch.setenv("SPARK_CONNECT_MODE_ENABLED", "1")
+    for cell in ["cell", connect.col("cell")]:
+        results = [
+            h3spark.cell_to_parent(cell, connect.lit(0)),
+            h3hex.cell_to_parent(cell, 0),
+        ]
+        assert all(isinstance(r, ConnectColumn) for r in results)
 
 
 def test_is_valid_cell(spark):

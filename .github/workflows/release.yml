@@ -16,11 +16,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # hatch-vcs needs the tags to derive the version
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       # h3spark is pure Python, so a single py3-none-any wheel plus an sdist covers every platform
@@ -45,7 +45,7 @@ jobs:
           pip install dist/*.whl
           cd /tmp && python -c "import h3spark, h3spark.native, h3spark.convenience"
       - name: Upload dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist
@@ -61,13 +61,15 @@ jobs:
       id-token: write
       # Used to generate artifact attestation
       attestations: write
+      artifact-metadata: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist
       - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v2
+        # SLSA build provenance, as no predicate is given
+        uses: actions/attest@v4
         with:
           subject-path: "dist/*"
       - name: Publish to PyPI
