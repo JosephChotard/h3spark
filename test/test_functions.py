@@ -15,7 +15,7 @@ import h3spark.hex as h3hex
 import h3spark.native as h3spark_n
 import h3spark.udf as h3spark_u
 from h3spark import REGISTRY
-from h3spark._registry import long_cells
+from h3spark._registry import cell_check, with_checks
 
 from .conftest import physical_plan
 
@@ -84,14 +84,18 @@ def test_native_rejects_other_cell_types_when_planning(spark, name, cell_type):
 
 
 def test_array_cell_type_check(spark):
-    df = spark.createDataFrame([([1],)], "cells array<int>")
-    assert df.select(long_cells(F.col("cells"), "f", False, True)).first()[0] == [1]
-    df = spark.createDataFrame([], "cells array<string>")
+    def checked(df):
+        cells = F.col("cells")
+        return df.select(with_checks(cells, [cell_check(cells, "f", False, True)]))
+
+    assert checked(spark.createDataFrame([([1],)], "cells array<int>")).first()[0] == [
+        1
+    ]
     message = (
         "f expects array<bigint> cells (for hex string cells use h3spark.str_to_int)"
     )
     with pytest.raises(Exception, match=re.escape(message)):
-        df.select(long_cells(F.col("cells"), "f", False, True)).schema
+        checked(spark.createDataFrame([], "cells array<string>")).schema
 
 
 def test_cell_type_check_is_optimized_away(df):

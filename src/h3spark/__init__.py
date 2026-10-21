@@ -54,15 +54,13 @@ def _h3shape_to_cells_compacted(shape: h3.H3Shape, res: int):
 @h3fn(h3=h3.str_to_int, return_type=_LONG, returns="cell", hex=False)
 def str_to_int(h3_str: ColumnOrName) -> Column:
     """Parses a hex string cell. Performs no validation: strings that aren't hex give meaningless values or null"""
-    # Signed so the conversion can't overflow a long, which raises in ANSI mode
-    # (the length check is on the input so Spark can still reuse the conversion when the result is used repeatedly)
-    return F.conv(F.when(F.length(h3_str) <= 16, h3_str), 16, -10).cast("long")
+    return B.from_hex(h3_str)
 
 
 @h3fn(h3=h3.int_to_str, return_type=T.StringType(), cells=("h3_int",), hex=False)
 def int_to_str(h3_int: ColumnOrName) -> Column:
     """Formats a cell as a lowercase hex string. Performs no validation"""
-    return F.lower(F.hex(h3_int))
+    return B.to_hex(h3_int)
 
 
 @h3fn(h3=_h3_is_valid_cell, return_type=_BOOL, cells=("cell",))
@@ -73,7 +71,7 @@ def is_valid_cell(cell: ColumnOrName) -> Column:
 
 @h3fn(h3=h3.get_resolution, return_type=_INT, cells=("cell",))
 def get_resolution(cell: ColumnOrName) -> Column:
-    return B.resolution(cell)
+    return B.resolution(cell).cast("int")
 
 
 @h3fn(h3=h3.get_base_cell_number, return_type=_INT, cells=("cell",))

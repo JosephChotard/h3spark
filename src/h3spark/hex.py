@@ -17,7 +17,7 @@ from pyspark.sql.column import Column
 
 import h3.api.numpy_int as h3
 
-from . import REGISTRY, int_to_str, str_to_int
+from . import REGISTRY
 from . import _bits as B
 from ._registry import H3Function, column_arg, named, to_col
 
@@ -58,6 +58,8 @@ def _hexify(entry: H3Function):
     if not (entry.cells or entry.cell_lists or entry.returns):
         return func
     params = [p for p in entry.signature.parameters if p not in entry.static]
+    # The cells are converted to long here, so native functions don't need to check them
+    implementation = entry.native_unchecked or entry.udf
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs) -> Column:
@@ -65,17 +67,17 @@ def _hexify(entry: H3Function):
         values = [bound.arguments.get(p) for p in params]
         for name in entry.cells:
             if name in bound.arguments:
-                bound.arguments[name] = str_to_int(bound.arguments[name])
+                bound.arguments[name] = B.from_hex(to_col(bound.arguments[name]))
         for name in entry.cell_lists:
             if name in bound.arguments:
                 bound.arguments[name] = F.transform(
-                    to_col(bound.arguments[name]), str_to_int
+                    to_col(bound.arguments[name]), B.from_hex
                 )
-        result = func(*bound.args, **bound.kwargs)
+        result = implementation(*bound.args, **bound.kwargs)
         if entry.returns == "cell":
-            result = int_to_str(result)
+            result = B.to_hex(result)
         elif entry.returns == "cells":
-            result = F.transform(result, int_to_str)
+            result = F.transform(result, B.to_hex)
         return named(result, entry.name, values)
 
     wrapper.__module__ = __name__

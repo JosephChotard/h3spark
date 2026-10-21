@@ -14,6 +14,7 @@ The decorated name is bound to the default implementation: native if there is on
 import functools
 import inspect
 import json
+import operator
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -25,6 +26,7 @@ from pyspark.sql import functions as F
 from pyspark.sql import types as T
 from pyspark.sql.column import Column
 
+from . import _bits as B
 from .utils import to_h3_cell, to_h3_shape
 
 try:
@@ -48,6 +50,9 @@ class H3Function:
     signature: inspect.Signature
     udf: Callable[..., Column]
     native: Callable[..., Column] | None
+    # The native implementation without the cell type checks and result name, for callers that already have long
+    # cell columns (h3spark.hex). Shallower, see _bits.balanced.
+    native_unchecked: Callable[..., Column] | None
     # Python version taking the same arguments as the Spark functions (cells as ints, values as Spark returns them)
     reference: Callable[..., Any]
     return_type: T.DataType
@@ -81,10 +86,10 @@ def column_arg(value: Any) -> Column:
     return F.lit(value)
 
 
-def long_cells(col: Column, name: str, has_hex: bool, array: bool = False) -> Column:
+def cell_check(col: Column, name: str, has_hex: bool, array: bool = False) -> Column:
     """
-    Casts an integral cell (or array of cells) column to long. Any other type fails when Spark analyses the plan,
-    e.g. on df.select, instead of producing nulls or failing once rows are processed.
+    Always false, but makes Spark fail when it analyses the plan (e.g. on df.select) unless col is an integral cell
+    column (or array of them), instead of producing nulls or failing once rows are processed
     """
     expected = "array<bigint>" if array else "bigint"
     hint = f"h3spark.hex.{name} or " if has_hex else ""
@@ -93,9 +98,17 @@ def long_cells(col: Column, name: str, has_hex: bool, array: bool = False) -> Co
     probe = F.struct(col.alias(message))[message]
     if array:
         probe = probe[0]
-    # The check is in a branch that's never taken, which the optimizer removes
-    never = F.lit(False) & F.bitwise_not(probe).isNull()
-    return F.when(never, F.lit(None)).otherwise(col.cast(expected))
+    return F.lit(False) & F.bitwise_not(probe).isNull()
+
+
+def with_checks(result: Column, checks: list[Column]) -> Column:
+    """
+    Puts checks in a branch that's never taken, which the optimizer removes. Beside the result rather than around
+    each argument, so they don't nest the expression deeper: Spark Connect rejects deeply nested expressions.
+    """
+    if not checks:
+        return result
+    return F.when(B.balanced(operator.or_, checks), F.lit(None)).otherwise(result)
 
 
 def _arg_name(value: Any) -> str:
@@ -250,14 +263,23 @@ def h3fn(
         def native(*args, **kwargs) -> Column:
             bound = bind(args, kwargs)
             values = [bound.arguments[p] for p in column_params]
+            checks = []
             for p in column_params:
                 value = bound.arguments[p]
                 if p in cells or p in cell_lists:
-                    value = long_cells(
-                        to_col(value), func.__name__, hex, p in cell_lists
-                    )
+                    array = p in cell_lists
+                    value = to_col(value)
+                    checks.append(cell_check(value, func.__name__, hex, array))
+                    value = value.cast("array<bigint>" if array else "bigint")
                 bound.arguments[p] = column_arg(value)
-            return named(func(*bound.args, **bound.kwargs), func.__name__, values)
+            result = with_checks(func(*bound.args, **bound.kwargs), checks)
+            return named(result, func.__name__, values)
+
+        def native_unchecked(*args, **kwargs) -> Column:
+            bound = bind(args, kwargs)
+            for p in column_params:
+                bound.arguments[p] = column_arg(bound.arguments[p])
+            return func(*bound.args, **bound.kwargs)
 
         if func.__name__ in REGISTRY:
             raise ValueError(f"{func.__name__} is already registered")
@@ -266,6 +288,7 @@ def h3fn(
             signature=signature,
             udf=udf,
             native=None if _is_stub(func) else native,
+            native_unchecked=None if _is_stub(func) else native_unchecked,
             reference=reference,
             return_type=return_type,
             cells=cells,

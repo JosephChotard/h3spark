@@ -23,7 +23,11 @@ from pyspark.sql import functions as F
 import h3spark.hex as h3hex
 from h3spark import REGISTRY
 
-from .conftest import physical_plan
+from .conftest import REMOTE, physical_plan
+
+# Spark Connect's Python client rejects expressions nested more than 100 protobuf messages deep. Leave room for
+# users to nest h3spark functions in their own expressions.
+MAX_CONNECT_DEPTH = 60
 
 MAX_RES = 15
 N_RANDOM_CELLS = 3000
@@ -204,3 +208,26 @@ def test_function(spark, name, static):
             if entry.returns:
                 long_value = to_hex(long_value)
             assert row["hex"] == long_value
+
+
+def proto_depth(message) -> int:
+    children = [
+        child
+        for field, value in message.ListFields()
+        if field.message_type and not field.message_type.GetOptions().map_entry
+        for child in (value if field.is_repeated else [value])
+    ]
+    return 1 + max(map(proto_depth, children), default=0)
+
+
+@pytest.mark.skipif(not REMOTE, reason="Spark Connect only")
+@pytest.mark.parametrize("name", REGISTRY)
+def test_connect_expression_depth(spark, name):
+    entry = REGISTRY[name]
+    params = [p for p in entry.signature.parameters if p not in entry.static]
+    implementations = [entry.default, entry.udf] + (
+        [getattr(h3hex, name)] if entry.hex else []
+    )
+    for implementation in implementations:
+        expression = implementation(*map(F.col, params))._expr.to_plan(spark.client)
+        assert proto_depth(expression) <= MAX_CONNECT_DEPTH
